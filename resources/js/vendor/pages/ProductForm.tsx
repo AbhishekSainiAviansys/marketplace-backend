@@ -7,6 +7,40 @@ import { Alert, Button, Field, PageHeader, Panel } from '@ui'
 type Cat = { id: number; name: string }
 type CatField = { id: number; field_label: string; is_required?: number | boolean }
 
+type Onboarding = {
+  business?: { legal_name?: string; business_type?: string; address?: string }
+  tax?: { pan?: string }
+  bank?: { account_number?: string; ifsc?: string; holder_name?: string }
+  kyc?: { signatory_name?: string; contact_phone?: string }
+  categories?: string[]
+  agreement?: string
+}
+
+type VendorProfile = {
+  onboarding?: Onboarding | null
+}
+
+type MeResponse = {
+  vendor?: VendorProfile | null
+}
+
+function isProfileComplete(v: VendorProfile | null | undefined): boolean {
+  const o = v?.onboarding ?? ({} as Onboarding)
+  return !!(
+    o.business?.legal_name &&
+    o.business?.business_type &&
+    o.business?.address &&
+    o.tax?.pan &&
+    o.bank?.account_number &&
+    o.bank?.ifsc &&
+    o.bank?.holder_name &&
+    o.kyc?.signatory_name &&
+    o.kyc?.contact_phone &&
+    Array.isArray(o.categories) && o.categories.length > 0 &&
+    o.agreement === 'accepted'
+  )
+}
+
 // Step 1: pick ONE category -> Step 2: dynamic fields (per the project diagram).
 export function ProductForm({ prefix }: { prefix: string }) {
   const [cats, setCats] = useState<Cat[]>([])
@@ -16,7 +50,29 @@ export function ProductForm({ prefix }: { prefix: string }) {
   const [vals, setVals] = useState<Record<string, string>>({})
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [guard, setGuard] = useState<'checking' | 'ok' | 'incomplete'>('checking')
   const nav = useNavigate()
+
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const { data } = await api.get<MeResponse>('/auth/me')
+        if (!alive) return
+        setGuard(isProfileComplete(data.vendor) ? 'ok' : 'incomplete')
+      } catch {
+        if (!alive) return
+        setGuard('incomplete')
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
+  useEffect(() => {
+    if (guard === 'incomplete') {
+      nav('/profile')
+    }
+  }, [guard, nav])
 
   useEffect(() => {
     api
@@ -66,6 +122,19 @@ export function ProductForm({ prefix }: { prefix: string }) {
   }
 
   const chosen = cats.find((c) => String(c.id) === catId)
+
+  if (guard === 'checking') {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6 p-6">
+        <PageHeader title="Add product" subtitle="Checking your profile…" />
+        <div className="p-5 text-center text-[var(--text-muted)]">Loading…</div>
+      </div>
+    )
+  }
+
+  if (guard === 'incomplete') {
+    return null
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">

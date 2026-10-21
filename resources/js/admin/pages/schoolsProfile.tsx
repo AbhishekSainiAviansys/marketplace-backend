@@ -1,28 +1,68 @@
 /** Admin -> Schools profile view (part 2b). */
-import { Building2, MapPin } from 'lucide-react'
+import { Building2, MapPin, Lock } from 'lucide-react'
 import { fmtDate, type LocNames, type SchoolRow, type SchoolProfile } from './schoolsTypes'
 
-export function SchoolProfileView({ profile, locNames }: { profile: SchoolRow & { school: SchoolProfile }; locNames: LocNames | null }) {
+export function SchoolProfileView({ profile, locNames }: { profile: SchoolRow & { school: SchoolProfile | null }; locNames: LocNames | null }) {
+  const statusClass = { Active: 'bg-emerald-100 text-emerald-700', Inactive: 'bg-amber-100 text-amber-700', Deleted: 'bg-red-100 text-red-700' }[profile.school_status]
+  const statusLabel = { Active: 'Active', Inactive: 'Inactive', Deleted: 'Deleted' }[profile.school_status]
+const principal = [profile.principal_titile, profile.school_principal_name].filter(Boolean).join(' ').trim() || '—'
+  const coordinator = [profile.coordinator_titile, profile.school_coordinator_name].filter(Boolean).join(' ').trim() || '—'
+  const boardMedium = [profile.school_board, profile.school_medium].filter(Boolean).join(' / ').trim() || '—'
+  const email = profile.school_email ?? profile.email ?? null
+  const phone = profile.school_mobile ?? profile.school_phone ?? profile.whatsapp ?? null
   return (
     <div className="space-y-4">
-      <SchoolOnboardingDetails data={profile.school?.onboarding} />
+      <div className="rounded-xl border border-slate-200 p-4">
+        <h3 className="text-sm font-bold text-slate-900">School Information</h3>
+        <dl className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+          <div className="font-medium text-slate-700">School Name</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.school_name}>{profile.school_name}</dd>
+          <div className="font-medium text-slate-700">School Code</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.school_code}>{profile.school_code}</dd>
+          <div className="font-medium text-slate-700">Status</div>
+          <dd className={`text-sm font-medium ${statusClass}`}>{statusLabel}</dd>
+          <div className="font-medium text-slate-700">Principal</div>
+          <dd className="truncate font-medium text-slate-800" title={principal}>{principal}</dd>
+          <div className="font-medium text-slate-700">Coordinator</div>
+          <dd className="truncate font-medium text-slate-800" title={coordinator}>{coordinator}</dd>
+          <div className="font-medium text-slate-700">Board / Medium</div>
+          <dd className="truncate font-medium text-slate-800" title={boardMedium}>{boardMedium}</dd>
+          <div className="font-medium text-slate-700">City</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.city ?? ''}>{profile.city ?? '—'}</dd>
+          <div className="font-medium text-slate-700">District</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.district ?? ''}>{profile.district ?? '—'}</dd>
+          <div className="font-medium text-slate-700">State</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.state ?? ''}>{profile.state ?? '—'}</dd>
+          <div className="font-medium text-slate-700">Country</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.country_name ?? profile.country ?? ''}>{profile.country_name ?? profile.country ?? '—'}</dd>
+          <div className="font-medium text-slate-700">Address</div>
+          <dd className="truncate font-medium text-slate-800" title={profile.school_address ?? ''}>{profile.school_address ?? '—'}</dd>
+        </dl>
+      </div>
       {(locNames?.country_name || locNames?.state_name || locNames?.district_name) && (
         <p className="flex items-center gap-1.5 text-xs text-slate-500">
-          <MapPin className="h-3.5 w-3.5" />
-          {[locNames.country_name, locNames.state_name, locNames.district_name].filter(Boolean).join(' · ')}
+          <MapPin className="h-3.5 w-3.5" /> {[locNames.country_name, locNames.state_name, locNames.district_name].filter(Boolean).join(' · ')}
         </p>
       )}
-      {profile.school?.review_notes && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <span className="block font-bold">Review notes ({fmtDate(profile.school.reviewed_at)})</span>
-          {profile.school.review_notes}
-        </div>
+      {email && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-500">
+          <Building2 className="h-3.5 w-3.5" /> {email}
+        </p>
+      )}
+      {phone && (
+        <p className="flex items-center gap-1.5 text-xs text-slate-500">
+          <Lock className="h-3.5 w-3.5" /> {phone}
+        </p>
       )}
       <section>
+        {!profile.school && (
+          <p className="mt-1 text-xs text-amber-600">Not onboarded yet — no onboarding record or vendors linked for this directory entry.</p>
+        )}
         <h3 className="text-sm font-bold text-slate-900">Linked vendors ({profile.school?.vendors?.length ?? 0})</h3>
-        {(profile.school?.vendors ?? []).length === 0 ? (
+        {(profile.school?.vendors ?? []).length === 0 && (
           <p className="mt-1 text-xs text-slate-400">No vendor pickup links yet — assign them from the Vendors screen.</p>
-        ) : (
+        )}
+        {(profile.school?.vendors ?? []).length > 0 && (
           <ul className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-200">
             {(profile.school?.vendors ?? []).map((s) => (
               <li key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
@@ -33,57 +73,6 @@ export function SchoolProfileView({ profile, locNames }: { profile: SchoolRow & 
           </ul>
         )}
       </section>
-    </div>
-  )
-}
-
-function SchoolOnboardingDetails({ data }: { data: Record<string, unknown> | null }) {
-  if (!data || Object.keys(data).length === 0) {
-    return (
-      <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-        <Building2 className="mr-1 inline h-4 w-4" />
-        No application submitted yet — this school only registered and never filled the onboarding wizard.
-      </p>
-    )
-  }
-  const sec = (key: string) => (data[key] as Record<string, unknown> | undefined) ?? null
-  const txt = (v: unknown) => (typeof v === 'string' && v.trim() ? v : typeof v === 'number' ? String(v) : null)
-  const inst = sec('institution')
-  const contact = sec('contact')
-  const groups: { title: string; fields: [string, string | null][] }[] = [
-    { title: 'Institution', fields: [['Name', txt(inst?.name)], ['Type', txt(inst?.type)], ['Board', txt(inst?.board)], ['Registration no.', txt(inst?.registration_number)], ['Address', txt(inst?.address)], ['Pincode', txt(inst?.pincode)]] },
-    { title: 'Contact', fields: [['Person', txt(contact?.person_name)], ['Designation', txt(contact?.designation)], ['Phone', txt(contact?.contact_phone)], ['Email', txt(contact?.contact_email)]] },
-  ]
-  const classes = Array.isArray(data.classes) ? data.classes.filter((c): c is string => typeof c === 'string') : []
-  return (
-    <div className="space-y-3">
-      {groups.map((g) => {
-        const shown = g.fields.filter(([, v]) => v)
-        if (shown.length === 0) return null
-        return (
-          <section key={g.title} className="rounded-xl border border-slate-200 p-4">
-            <h3 className="text-sm font-bold text-slate-900">{g.title}</h3>
-            <dl className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
-              {shown.map(([label, value]) => (
-                <div key={label} className="flex justify-between gap-3 text-sm">
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="truncate font-medium text-slate-800" title={value ?? ''}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </section>
-        )
-      })}
-      {classes.length > 0 && (
-        <section className="rounded-xl border border-slate-200 p-4">
-          <h3 className="text-sm font-bold text-slate-900">Classes</h3>
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {classes.map((c) => (
-              <span key={c} className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">{c}</span>
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   )
 }

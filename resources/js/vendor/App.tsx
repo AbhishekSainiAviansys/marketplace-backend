@@ -16,6 +16,7 @@ import { Products } from './pages/Products'
 import { ProductForm } from './pages/ProductForm'
 import { Schools } from './pages/Schools'
 import { Addresses } from './pages/Addresses'
+import { Profile } from './pages/Profile'
 
 const ROLE = 'vendor'
 const PREFIX = 'vendor'
@@ -26,6 +27,7 @@ const NAV: NavItem[] = [
   { to: '/products/new', label: 'Add product', icon: icons.plus, group: 'Catalogue' },
   { to: '/schools', label: 'Linked schools', icon: icons.school, group: 'Network' },
   { to: '/addresses', label: 'My addresses', icon: <MapPin className="h-4 w-4" />, group: 'Network' },
+  { to: '/profile', label: 'My profile', icon: icons.users, group: 'Network' },
 ]
 
 const TITLES: Record<string, string> = {
@@ -34,6 +36,7 @@ const TITLES: Record<string, string> = {
   '/products/new': 'Add product',
   '/schools': 'Linked schools',
   '/addresses': 'My addresses',
+  '/profile': 'My profile',
 }
 
 function Guard({ children }: { children: ReactNode }) {
@@ -75,6 +78,7 @@ function Shell() {
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
   else if (pathname === '/schools') page = <Schools />
   else if (pathname === '/addresses') page = <Addresses />
+  else if (pathname === '/profile') page = <Profile />
   else page = <NotFound path={pathname} />
 
   return (

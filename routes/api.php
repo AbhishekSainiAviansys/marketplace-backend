@@ -13,7 +13,6 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\VendorOnboardingController;
 use App\Http\Controllers\SchoolOnboardingController;
 use App\Http\Controllers\CoachingController;
-use App\Http\Controllers\CoachingKeywordController;
 use App\Http\Controllers\DirectoryController;
 use App\Http\Controllers\EnquiryController;
 
@@ -45,17 +44,9 @@ Route::prefix('v1')->group(function () {
     // Public institution directory (country / state / district / type filters).
     // Deliberately unauthenticated - students browse it logged-out, same as the
     // catalogue, so no 401 -> redirect-to-login interceptor trips.
-    // Default (no filters): random 10 school + 10 institute + 10 tutor sample;
-    // any filter: full newest-first list. `total` is always the full count.
     Route::get('directory', [DirectoryController::class, 'index']);
-    // Labels BEFORE the {kind}/{id} detail route — otherwise `labels` is
-    // captured as a kind and 404s on the kind constraint.
-    Route::get('directory/labels', [DirectoryController::class, 'labels']);
     Route::get('directory/{kind}/{id}', [DirectoryController::class, 'show'])
         ->where(['kind' => 'school|coaching', 'id' => '[0-9]+']);
-    // One-click local seed for the first private_tutor row
-    // (institute_type=private_tutor -> tutor[] group, instant-approved).
-    Route::post('directory/seed-tutor', [DirectoryController::class, 'seedTutor']);
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
@@ -72,16 +63,12 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('admin')->middleware('role:admin')->group(function () {
             Route::get('dashboard', [AdminController::class, 'dashboard']);
-            // Stats BEFORE apiResource — otherwise GET vendors/stats is captured
-            // by the vendors/{id} show route and 404s on a non-numeric id.
-            Route::get('vendors/stats', [AdminController::class, 'vendorStats']);
-            Route::get('schools/stats', [AdminController::class, 'schoolStats']);
             Route::apiResource('vendors', AdminController::class);
             // Amazon-style review: approve / reject with notes -> notifies vendor.
             Route::post('vendors/{id}/review', [AdminController::class, 'review']);
             Route::post('schools/{id}/review', [AdminController::class, 'schoolReview']);
-            Route::get('schools/{school}', [AdminController::class, 'schoolShow'])->where('school','[0-9]+');
             Route::get('schools', [AdminController::class, 'schoolIndex']);
+            Route::get('schools/{id}', [AdminController::class, 'schoolShow']);
             Route::post('schools', [AdminController::class, 'schoolStore']);
             Route::put('schools/{id}', [AdminController::class, 'schoolUpdate']);
             Route::delete('schools/{id}', [AdminController::class, 'schoolDestroy']);
@@ -120,11 +107,7 @@ Route::prefix('v1')->group(function () {
         // Coaching institute panel (/coaching): instant activation, so the
         // profile endpoints only need the role + the (always-true) approval gate.
         Route::prefix('coaching')->middleware(['role:coaching', 'approved'])->group(function () {
-            Route::get('dashboard-analytics', [CoachingController::class, 'dashboardAnalytics']);
-            // Insights: full drill-down behind the dashboard's clickable panels.
-            Route::get('insights/summary', [CoachingController::class, 'insightsSummary']);
-            Route::get('insights/views', [CoachingController::class, 'insightsViews']);
-            Route::get('enquiries', [CoachingController::class, 'enquiries']);
+            Route::get('dashboard', [CoachingController::class, 'dashboard-analytics']); // analytics summary for the year, month, day on click cards move to new menu button of view interusted students list have calander filter detault current month
             Route::get('profile', [CoachingController::class, 'profile']);
             Route::put('profile', [CoachingController::class, 'update']);
             Route::get('details', [CoachingController::class, 'details']);
@@ -142,10 +125,6 @@ Route::prefix('v1')->group(function () {
             Route::post('portfolio/upload', [CoachingController::class, 'portfolioUpload']);
             Route::post('branding/upload', [CoachingController::class, 'brandingUpload']);
             Route::delete('branding/{type}', [CoachingController::class, 'brandingDestroy'])->where('type','logo|banner');
-            // Keywords owned by this coaching institute — searchable on /directory.
-            Route::get('keywords', [CoachingKeywordController::class, 'index']);
-            Route::post('keywords', [CoachingKeywordController::class, 'store']);
-            Route::delete('keywords/{id}', [CoachingKeywordController::class, 'destroy'])->where('id','[0-9]+');
         });
         Route::prefix('school')->middleware('role:school')->group(function () {
             // Onboarding endpoints stay reachable pre-approval; everything else gets 'approved'.
@@ -179,4 +158,3 @@ Route::prefix('v1')->group(function () {
         });
     });
 });
-

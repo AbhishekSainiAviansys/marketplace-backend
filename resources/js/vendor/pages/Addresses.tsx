@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PlusCircle, Trash2 } from 'lucide-react'
+import { PlusCircle, Pencil, Trash2 } from 'lucide-react'
 import { api, errMsg, rowsOf } from '@lib/api'
 import { Alert, Button, EmptyState, PageHeader, Panel, Skeleton } from '@ui'
 import { AddressForm } from './AddressForm'
@@ -69,20 +69,29 @@ export function Addresses() {
         title="My addresses"
         subtitle="Saved delivery and billing addresses"
         actions={
-          <Button
-            icon={<PlusCircle className="h-4 w-4" />}
-            onClick={() => setAdding(true)}
-          >
-            Add address
-          </Button>
+          rows.length === 0 ? (
+            <Button
+              icon={<PlusCircle className="h-4 w-4" />}
+              onClick={() => setAdding(true)}
+            >
+              Add address
+            </Button>
+          ) : (
+            <Button
+              icon={<Pencil className="h-4 w-4" />}
+              onClick={() => setAdding(true)}
+            >
+              Edit address
+            </Button>
+          )
         }
       />
 
       {err && <Alert>{err}</Alert>}
 
       {adding && (
-        <Panel title="New address" subtitle="Fill in the delivery details">
-          <AddressForm onSaved={onSaved} />
+        <Panel title={rows.length > 0 ? "Edit address" : "New address"} subtitle="Fill in the delivery details">
+          <AddressForm initial={rows.length > 0 ? rows[0] : undefined} onSaved={onSaved} />
           <Button variant="secondary" onClick={() => setAdding(false)}>
             Cancel
           </Button>

@@ -10,5 +10,6 @@ class User extends Authenticatable {
     public function vendor(){ return $this->hasOne(Vendor::class); }
     public function school(){ return $this->hasOne(School::class); }
     public function coachingInstitute(){ return $this->hasOne(CoachingInstitute::class); }
+    public function addresses(){ return $this->hasMany(Address::class); }
 }
 

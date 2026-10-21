@@ -12,6 +12,9 @@ class DatabaseSeeder extends Seeder {
         $admin = User::firstOrCreate(['email'=>'admin@market.local'],['name'=>'Super Admin','whatsapp'=>'9000000001','password'=>Hash::make('Admin@123'),'role'=>'admin']);
         $v = User::firstOrCreate(['email'=>'vendor1@market.local'],['name'=>'Vendor One','whatsapp'=>'9000000002','password'=>Hash::make('Vendor@123'),'role'=>'vendor']);
         $vendor = Vendor::firstOrCreate(['user_id'=>$v->id],['shop_name'=>'Vendor One Store']);
+        // Test vendor for verification: whatsapp 8630172681 / password Abhishek@123
+        $vt = User::firstOrCreate(['email'=>'vendor.test@market.local'],['name'=>'Test Vendor','whatsapp'=>'8630172681','password'=>Hash::make('Abhishek@123'),'role'=>'vendor']);
+        $vendorTest = Vendor::firstOrCreate(['user_id'=>$vt->id],['shop_name'=>'Test Vendor Shop']);
         $s = User::firstOrCreate(['email'=>'school1@market.local'],['name'=>'School One','whatsapp'=>'9000000003','password'=>Hash::make('School@123'),'role'=>'school']);
         $sch = School::firstOrCreate(['school_code'=>'SCH001'],['user_id'=>$s->id,'name'=>'Demo Public School','is_independent'=>true,'class_list'=>['1','2','3']]);
         // Demo private tutor so GET /v1/directory always has a tutor[] row

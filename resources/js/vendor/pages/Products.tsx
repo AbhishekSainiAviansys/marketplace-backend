@@ -13,10 +13,46 @@ type Product = {
   category?: { name?: string }
 }
 
+type Onboarding = {
+  business?: { legal_name?: string; business_type?: string; address?: string }
+  tax?: { pan?: string }
+  bank?: { account_number?: string; ifsc?: string; holder_name?: string }
+  kyc?: { signatory_name?: string; contact_phone?: string }
+  categories?: string[]
+  agreement?: string | boolean
+}
+
+type VendorProfile = {
+  onboarding?: Onboarding | null
+  onboarding_status?: string | null
+}
+
+type MeResponse = {
+  vendor?: VendorProfile | null
+}
+
 const DELIVERY: Record<string, string> = {
   self: 'Self delivery',
   thirdparty: 'Third party',
   school_pickup: 'School pickup',
+}
+
+/** Profile is complete when every onboarding section is filled. */
+function isProfileComplete(v: VendorProfile | null | undefined): boolean {
+  const o = v?.onboarding ?? ({} as Onboarding)
+  return !!(
+    o.business?.legal_name &&
+    o.business?.business_type &&
+    o.business?.address &&
+    o.tax?.pan &&
+    o.bank?.account_number &&
+    o.bank?.ifsc &&
+    o.bank?.holder_name &&
+    o.kyc?.signatory_name &&
+    o.kyc?.contact_phone &&
+    Array.isArray(o.categories) && o.categories.length > 0 &&
+    (o.agreement === 'accepted' || o.agreement === true)
+  )
 }
 
 export function Products() {
@@ -26,6 +62,7 @@ export function Products() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
+  const [profileComplete, setProfileComplete] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,6 +82,21 @@ export function Products() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const { data } = await api.get<MeResponse>('/auth/me')
+        if (!alive) return
+        setProfileComplete(isProfileComplete(data.vendor))
+      } catch {
+        if (!alive) return
+        setProfileComplete(false)
+      }
+    })()
+    return () => { alive = false }
+  }, [])
+
   const remove = async (id: number) => {
     if (!confirm('Delete this product? This cannot be undone.')) return
     setBusyId(id)
@@ -59,19 +111,32 @@ export function Products() {
     }
   }
 
+  const addProduct = (
+    <Link to="/products/new">
+      <Button icon={<PlusCircle className="h-4 w-4" />}>Add product</Button>
+    </Link>
+  )
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="My products"
         subtitle={`${meta.total} product${meta.total === 1 ? '' : 's'} in your catalogue`}
         actions={
-          <Link to="/products/new">
-            <Button icon={<PlusCircle className="h-4 w-4" />}>Add product</Button>
-          </Link>
+          profileComplete === false ? null : addProduct
         }
       />
 
       {err && <Alert>{err}</Alert>}
+
+      {profileComplete === false && (
+        <Alert>
+          Complete your profile to add your products.{' '}
+          <Link to="/profile" className="accent-text font-semibold underline underline-offset-4 hover:no-underline">
+            Go to My profile
+          </Link>
+        </Alert>
+      )}
 
       <Panel bodyClass="p-0">
         {loading ? (
@@ -85,9 +150,11 @@ export function Products() {
             title="No products yet"
             hint="Products you add here become visible to every school linked to your store."
             action={
-              <Link to="/products/new">
-                <Button icon={<PlusCircle className="h-4 w-4" />}>Add your first product</Button>
-              </Link>
+              profileComplete === false ? null : (
+                <Link to="/products/new">
+                  <Button icon={<PlusCircle className="h-4 w-4" />}>Add your first product</Button>
+                </Link>
+              )
             }
           />
         ) : (
