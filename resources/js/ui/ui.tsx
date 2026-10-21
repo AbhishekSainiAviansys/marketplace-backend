@@ -772,10 +772,6 @@ const HERO_IMAGES: Record<string, string> = {
 
 /* Company attribution shown on every login page. The year is derived at
    render time, so the footer rolls over automatically each January. */
-const _COMPANY = {
-  name: 'Aviansys Technologies Private Limited',
-  url: 'https://www.aviansys-tech.com/',
-}
 
 const LOGIN_COPY: Record<string, { title: string; blurb: string; points: string[] }> = {
   admin: {
@@ -981,5 +977,26 @@ export function AuthScreen({ role, signupTo }: { role: string; signupTo?: string
       </footer>
     </div>
 
+  )
+}
+
+export function Modal({ title, sub, wide, onClose, children }: { title?: string; sub?: string; wide?: boolean; onClose?: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div className={`relative w-full ${wide ? 'max-w-3xl' : 'max-w-lg'} max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl`} onClick={(e) => e.stopPropagation()}>
+        {(title || onClose) && (
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              {title && <h2 className="text-lg font-bold text-slate-900">{title}</h2>}
+              {sub && <p className="mt-0.5 text-sm text-slate-500">{sub}</p>}
+            </div>
+            {onClose && (
+              <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-600" aria-label="Close">×</button>
+            )}
+          </div>
+        )}
+        {children}
+      </div>
+    </div>
   )
 }

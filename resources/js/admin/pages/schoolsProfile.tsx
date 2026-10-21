@@ -1,6 +1,6 @@
 /** Admin -> Schools profile view (part 2b). */
 import { Building2, MapPin, Lock } from 'lucide-react'
-import { fmtDate, type LocNames, type SchoolRow, type SchoolProfile } from './schoolsTypes'
+import { type LocNames, type SchoolRow, type SchoolProfile } from './schoolsTypes'
 
 export function SchoolProfileView({ profile, locNames }: { profile: SchoolRow & { school: SchoolProfile | null }; locNames: LocNames | null }) {
   const statusClass = { Active: 'bg-emerald-100 text-emerald-700', Inactive: 'bg-amber-100 text-amber-700', Deleted: 'bg-red-100 text-red-700' }[profile.school_status]
@@ -16,9 +16,9 @@ const principal = [profile.principal_titile, profile.school_principal_name].filt
         <h3 className="text-sm font-bold text-slate-900">School Information</h3>
         <dl className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
           <div className="font-medium text-slate-700">School Name</div>
-          <dd className="truncate font-medium text-slate-800" title={profile.school_name}>{profile.school_name}</dd>
+          <dd className="truncate font-medium text-slate-800" title={profile.school_name ?? undefined}>{profile.school_name}</dd>
           <div className="font-medium text-slate-700">School Code</div>
-          <dd className="truncate font-medium text-slate-800" title={profile.school_code}>{profile.school_code}</dd>
+          <dd className="truncate font-medium text-slate-800" title={profile.school_code ?? undefined}>{profile.school_code}</dd>
           <div className="font-medium text-slate-700">Status</div>
           <dd className={`text-sm font-medium ${statusClass}`}>{statusLabel}</dd>
           <div className="font-medium text-slate-700">Principal</div>
