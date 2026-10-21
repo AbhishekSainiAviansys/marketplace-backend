@@ -1,0 +1,687 @@
+/* ============================================================================
+   MARKETPLACE — SHARED DESIGN SYSTEM
+   The single source of truth for every panel (admin 5180 / vendor 5181 / school 5182).
+
+   Each app's src/index.css does:
+       @import "tailwindcss" source(none);
+       @import "../../shared/design.css";
+   followed by two @source globs (one for its own src, one for this folder).
+
+   Editing this file re-skins all three panels at once. Never duplicate these
+   rules into an individual app.
+   ========================================================================= */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   1. THEME TOKENS  ->  real Tailwind utilities (bg-brand-600, text-brand-500…)
+   ------------------------------------------------------------------------ */
+@theme {
+  /* Brand ramp (OKLCH). Admin → Settings can override live via --brand. */
+  --color-brand-50: oklch(0.97 0.014 285);
+  --color-brand-100: oklch(0.94 0.03 285);
+  --color-brand-200: oklch(0.88 0.06 285);
+  --color-brand-300: oklch(0.8 0.1 285);
+  --color-brand-400: oklch(0.7 0.16 285);
+  --color-brand-500: oklch(0.62 0.2 285);
+  --color-brand-600: oklch(0.55 0.22 285);
+  --color-brand-700: oklch(0.48 0.21 285);
+  --color-brand-800: oklch(0.41 0.18 285);
+  --color-brand-900: oklch(0.35 0.15 285);
+
+  /* Semantic palette */
+  --color-ok-50: oklch(0.97 0.02 155);
+  --color-ok-100: oklch(0.93 0.05 155);
+  --color-ok-500: oklch(0.68 0.15 155);
+  --color-ok-600: oklch(0.6 0.15 155);
+  --color-ok-700: oklch(0.52 0.13 155);
+
+  --color-warn-50: oklch(0.98 0.03 85);
+  --color-warn-100: oklch(0.95 0.06 85);
+  --color-warn-500: oklch(0.76 0.15 75);
+  --color-warn-600: oklch(0.68 0.15 70);
+  --color-warn-700: oklch(0.58 0.13 65);
+
+  --color-danger-50: oklch(0.97 0.02 25);
+  --color-danger-100: oklch(0.94 0.04 25);
+  --color-danger-500: oklch(0.63 0.2 25);
+  --color-danger-600: oklch(0.57 0.2 25);
+  --color-danger-700: oklch(0.5 0.18 25);
+
+  --color-info-50: oklch(0.97 0.02 240);
+  --color-info-100: oklch(0.93 0.05 240);
+  --color-info-500: oklch(0.68 0.13 240);
+  --color-info-600: oklch(0.6 0.13 240);
+  --color-info-700: oklch(0.52 0.12 240);
+
+  /* Typography */
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Layout */
+  --spacing-sidebar: 16.5rem; /* 264px */
+  --spacing-rail: 4.75rem; /* 76px collapsed rail */
+  --spacing-topbar: 4rem; /* 64px */
+
+  /* Elevation */
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  --shadow-raised: 0 2px 4px rgb(15 23 42 / 0.05), 0 12px 32px -12px rgb(15 23 42 / 0.18);
+  --shadow-pop: 0 10px 38px -10px rgb(15 23 42 / 0.25), 0 4px 10px -4px rgb(15 23 42 / 0.1);
+
+  /* Motion */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   2. SEMANTIC TOKENS — light + dark. Dark mode is a single .dark class flip.
+   ------------------------------------------------------------------------ */
+:root {
+  --app-bg: oklch(0.97 0.004 265);
+  --surface: #fff;
+  --surface-2: oklch(0.985 0.003 265);
+  --surface-3: oklch(0.96 0.004 265);
+  --border: oklch(0.91 0.006 265);
+  --border-strong: oklch(0.85 0.008 265);
+  --text: oklch(0.21 0.02 265);
+  --text-muted: oklch(0.52 0.015 265);
+  --text-subtle: oklch(0.65 0.012 265);
+  --ring: var(--brand, var(--color-brand-600));
+  --sidebar-bg: #fff;
+  --topbar-bg: oklch(1 0 0 / 0.82);
+  --skeleton: oklch(0.94 0.004 265);
+}
+
+.dark {
+  --app-bg: oklch(0.17 0.012 265);
+  --surface: oklch(0.22 0.014 265);
+  --surface-2: oklch(0.26 0.015 265);
+  --surface-3: oklch(0.3 0.016 265);
+  --border: oklch(0.32 0.015 265);
+  --border-strong: oklch(0.4 0.018 265);
+  --text: oklch(0.97 0.005 265);
+  --text-muted: oklch(0.72 0.015 265);
+  --text-subtle: oklch(0.6 0.014 265);
+  --sidebar-bg: oklch(0.22 0.014 265);
+  --topbar-bg: oklch(0.22 0.014 265 / 0.82);
+  --skeleton: oklch(0.3 0.016 265);
+}
+
+/* ---------------------------------------------------------------------------
+   3. BRAND ACCENT — driven by --brand (set by Admin → Settings → Branding).
+   Every tint below is derived, so one hex re-skins the whole product.
+   ------------------------------------------------------------------------ */
+.accent-bg {
+  background-color: var(--brand, var(--color-brand-600));
+  /* Admin → Settings → Button style: "gradient" pushes a two-stop gradient
+     here from BrandProvider; "solid" leaves it none (flat colour). */
+  background-image: var(--accent-fill-image, none);
+}
+.accent-text {
+  color: var(--brand, var(--color-brand-600));
+}
+.accent-ring {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand, var(--color-brand-600)) 22%, transparent);
+}
+.accent-soft {
+  background-color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 10%, transparent);
+}
+.accent-soft-text {
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 82%, #000);
+}
+.accent-gradient {
+  background-image: linear-gradient(
+    135deg,
+    var(--brand, var(--color-brand-600)),
+    var(--brand-2, color-mix(in srgb, var(--brand, var(--color-brand-600)) 55%, #0f172a))
+  );
+}
+.dark .accent-soft-text {
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 70%, #fff);
+}
+
+/* ---------------------------------------------------------------------------
+   4. BASE
+   ------------------------------------------------------------------------ */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--app-bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Visible focus ring for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--brand, var(--color-brand-600)) 24%, transparent);
+  }
+
+  /* Slim scrollbars for long sidebars / settings lists. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-subtle);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   5. COMPONENT PRIMITIVES
+   Declared with @utility so they stay variant-composable (hover:, sm:…).
+   ------------------------------------------------------------------------ */
+
+/* --- Surfaces --- */
+@utility card {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand, var(--color-brand-600)) 5%, var(--surface)) 0%,
+    var(--surface) 58%
+  );
+  border: 1px solid color-mix(in srgb, var(--brand, var(--color-brand-600)) 12%, var(--border));
+  border-radius: 1rem;
+  box-shadow: var(--shadow-card);
+}
+@utility card-flat {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+}
+@utility card-hover {
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease;
+}
+.dark .card {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand, var(--color-brand-600)) 10%, var(--surface)) 0%,
+    var(--surface) 62%
+  );
+  border-color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 18%, var(--border));
+}
+
+/* --- Card tints: soft colour gradients + a 3px top accent edge.
+   Applied via StatCard tone / Panel tone. Dark variants follow the same
+   recipe the badges use so they stay readable, not neon. --- */
+.card-tint-accent,
+.card-tint-ok,
+.card-tint-warn,
+.card-tint-info,
+.card-tint-danger {
+  position: relative;
+  overflow: hidden;
+}
+.card-tint-accent::before,
+.card-tint-ok::before,
+.card-tint-warn::before,
+.card-tint-info::before,
+.card-tint-danger::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  border-radius: 1rem 1rem 0 0;
+}
+.card-tint-accent {
+  background: linear-gradient(180deg, var(--color-brand-100) 0%, var(--surface) 64%);
+  border-color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 30%, var(--border));
+}
+.card-tint-accent::before {
+  background: linear-gradient(90deg, var(--color-brand-400), var(--color-brand-600));
+}
+.card-tint-ok {
+  background: linear-gradient(180deg, var(--color-ok-100) 0%, var(--surface) 64%);
+  border-color: color-mix(in srgb, var(--color-ok-500) 32%, var(--border));
+}
+.card-tint-ok::before {
+  background: linear-gradient(90deg, var(--color-ok-500), var(--color-ok-700));
+}
+.card-tint-warn {
+  background: linear-gradient(180deg, var(--color-warn-100) 0%, var(--surface) 64%);
+  border-color: color-mix(in srgb, var(--color-warn-500) 34%, var(--border));
+}
+.card-tint-warn::before {
+  background: linear-gradient(90deg, var(--color-warn-500), var(--color-warn-700));
+}
+.card-tint-info {
+  background: linear-gradient(180deg, var(--color-info-100) 0%, var(--surface) 64%);
+  border-color: color-mix(in srgb, var(--color-info-500) 32%, var(--border));
+}
+.card-tint-info::before {
+  background: linear-gradient(90deg, var(--color-info-500), var(--color-info-700));
+}
+.card-tint-danger {
+  background: linear-gradient(180deg, var(--color-danger-100) 0%, var(--surface) 64%);
+  border-color: color-mix(in srgb, var(--color-danger-500) 32%, var(--border));
+}
+.card-tint-danger::before {
+  background: linear-gradient(90deg, var(--color-danger-500), var(--color-danger-700));
+}
+.dark .card-tint-accent {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--brand, var(--color-brand-600)) 22%, var(--surface)) 0%,
+    var(--surface) 68%
+  );
+}
+.dark .card-tint-ok {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-ok-500) 22%, var(--surface)) 0%,
+    var(--surface) 68%
+  );
+}
+.dark .card-tint-warn {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-warn-500) 24%, var(--surface)) 0%,
+    var(--surface) 68%
+  );
+}
+.dark .card-tint-info {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-info-500) 22%, var(--surface)) 0%,
+    var(--surface) 68%
+  );
+}
+.dark .card-tint-danger {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--color-danger-500) 22%, var(--surface)) 0%,
+    var(--surface) 68%
+  );
+}
+
+@utility surface-2 {
+  background: var(--surface-2);
+}
+@utility divider {
+  height: 1px;
+  background: var(--border);
+}
+
+/* --- Buttons --- */
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  padding: 0.625rem 1rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+}
+@utility btn-primary {
+  background-color: var(--brand, var(--color-brand-600));
+  /* Gradient mode (Admin → Settings → Button style) overrides with a two-stop
+     gradient; solid mode keeps the flat brand colour. */
+  background-image: var(--accent-fill-image, none);
+  color: #fff;
+  box-shadow: var(--shadow-card);
+}
+@utility btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+@utility btn-secondary-hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+}
+@utility btn-danger {
+  background: var(--color-danger-600);
+  color: #fff;
+}
+@utility btn-danger-hover {
+  background: var(--color-danger-700);
+}
+@utility btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+@utility btn-ghost-hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+@utility btn-icon {
+  padding: 0.5rem;
+  border-radius: 0.625rem;
+}
+@utility btn-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* --- Form fields --- */
+@utility label {
+  display: block;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+@utility field {
+  display: block;
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 0.625rem 0.875rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+@utility field-focus {
+  border-color: var(--brand, var(--color-brand-600));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand, var(--color-brand-600)) 18%, transparent);
+  outline: none;
+}
+@utility field-error {
+  border-color: var(--color-danger-500);
+}
+@utility field-hint {
+  margin-top: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-subtle);
+}
+
+/* --- Badges / pills --- */
+@utility badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  padding: 0.125rem 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+@utility badge-ok {
+  background: var(--color-ok-50);
+  color: var(--color-ok-700);
+}
+@utility badge-warn {
+  background: var(--color-warn-50);
+  color: var(--color-warn-700);
+}
+@utility badge-danger {
+  background: var(--color-danger-50);
+  color: var(--color-danger-700);
+}
+@utility badge-info {
+  background: var(--color-info-50);
+  color: var(--color-info-700);
+}
+@utility badge-neutral {
+  background: var(--surface-3);
+  color: var(--text-muted);
+}
+@utility badge-accent {
+  background: color-mix(in srgb, var(--brand, var(--color-brand-600)) 12%, transparent);
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 85%, #000);
+}
+
+.dark .badge-accent {
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 65%, #fff);
+}
+.dark .badge-ok {
+  background: color-mix(in srgb, var(--color-ok-500) 20%, transparent);
+  color: var(--color-ok-100);
+}
+.dark .badge-warn {
+  background: color-mix(in srgb, var(--color-warn-500) 20%, transparent);
+  color: var(--color-warn-100);
+}
+.dark .badge-danger {
+  background: color-mix(in srgb, var(--color-danger-500) 20%, transparent);
+  color: var(--color-danger-100);
+}
+.dark .badge-info {
+  background: color-mix(in srgb, var(--color-info-500) 20%, transparent);
+  color: var(--color-info-100);
+}
+
+/* --- Alerts --- */
+@utility alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  border-radius: 0.875rem;
+  border: 1px solid;
+  padding: 0.875rem 1rem;
+  font-size: 0.875rem;
+}
+@utility alert-ok {
+  background: var(--color-ok-50);
+  border-color: color-mix(in srgb, var(--color-ok-500) 35%, transparent);
+  color: var(--color-ok-700);
+}
+@utility alert-err {
+  background: var(--color-danger-50);
+  border-color: color-mix(in srgb, var(--color-danger-500) 35%, transparent);
+  color: var(--color-danger-700);
+}
+@utility alert-info {
+  background: var(--color-info-50);
+  border-color: color-mix(in srgb, var(--color-info-500) 35%, transparent);
+  color: var(--color-info-700);
+}
+.dark .alert-ok,
+.dark .alert-err,
+.dark .alert-info {
+  background: var(--surface-2);
+}
+
+/* --- Tables --- */
+@utility table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+@utility table-base {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+}
+@utility th {
+  text-align: left;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+  background: var(--surface-2);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+@utility td {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+@utility row-hover {
+  transition: background-color 0.12s ease;
+}
+
+/* --- Layout helpers --- */
+@utility page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+@utility icon-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  width: 2.75rem;
+  border-radius: 0.875rem;
+  flex-shrink: 0;
+}
+@utility skeleton {
+  background: var(--skeleton);
+  border-radius: 0.5rem;
+  animation: pulse 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@utility scrim {
+  position: absolute;
+  inset: 0;
+  background: oklch(0.21 0.02 265 / 0.5);
+  backdrop-filter: blur(2px);
+}
+@utility drawer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+}
+
+/* --- Nav --- */
+@utility nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+@utility nav-link-hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+@utility nav-link-active {
+  background: color-mix(in srgb, var(--brand, var(--color-brand-600)) 12%, transparent);
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 88%, #000);
+  font-weight: 600;
+}
+.dark .nav-link-active {
+  color: color-mix(in srgb, var(--brand, var(--color-brand-600)) 65%, #fff);
+}
+@utility nav-group-label {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-subtle);
+}
+
+/* --- Misc --- */
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+@utility truncate-1 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------------------------
+   6. MOTION
+   ------------------------------------------------------------------------ */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@utility animate-fade-up {
+  animation: fade-up 0.35s ease both;
+}
+@utility animate-slide-in-left {
+  animation: slide-in-left 0.25s ease both;
+}
+@utility animate-spin-slow {
+  animation: spin 0.7s linear infinite;
+}

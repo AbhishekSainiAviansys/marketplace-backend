@@ -4,6 +4,7 @@ use Illuminate\Database\Seeder;
 use App\Models\{User,Category,CategoryField,Vendor,School};
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Database\Seeders\CoachingDemoSeeder;
 
 // Canonical demo seed: local-only demo logins. Production: run with --class=ProductionSeeder (no demo users).
 class DatabaseSeeder extends Seeder {
@@ -13,6 +14,18 @@ class DatabaseSeeder extends Seeder {
         $vendor = Vendor::firstOrCreate(['user_id'=>$v->id],['shop_name'=>'Vendor One Store']);
         $s = User::firstOrCreate(['email'=>'school1@market.local'],['name'=>'School One','whatsapp'=>'9000000003','password'=>Hash::make('School@123'),'role'=>'school']);
         $sch = School::firstOrCreate(['school_code'=>'SCH001'],['user_id'=>$s->id,'name'=>'Demo Public School','is_independent'=>true,'class_list'=>['1','2','3']]);
+        // Demo private tutor so GET /v1/directory always has a tutor[] row
+        // (institute_type=private_tutor -> tutor group; instant-approved).
+        $t = User::firstOrCreate(['email'=>'tutor1@market.local'],['name'=>'Demo Private Tutor','whatsapp'=>'9000000004','password'=>Hash::make('Tutor@123'),'role'=>'coaching']);
+        $tutor = \App\Models\CoachingInstitute::firstOrCreate(['user_id'=>$t->id],[
+            'institute_code'=>'COA-TUTOR01','name'=>'Demo Private Tutor','institute_type'=>'private_tutor',
+            'address'=>'Demo tuition address','country_id'=>105,'state_id'=>'14694','district_id'=>678,
+            'onboarding_status'=>'approved','submitted_at'=>now(),
+            'onboarding'=>['institute'=>['name'=>'Demo Private Tutor','type'=>'private_tutor'],
+                'contact'=>['person_name'=>'Demo Private Tutor','email'=>'tutor1@market.local','phone'=>'+919000000004']],
+        ]);
+        $tutor->profile()->updateOrCreate(['institute_type'=>'coaching','institute_id'=>$tutor->id],
+            ['contact_person'=>'Demo Private Tutor','contact_email'=>'tutor1@market.local','country_id'=>105,'state_id'=>'14694','district_id'=>678]);
         DB::table('school_vendor')->updateOrInsert(['school_id'=>$sch->id,'vendor_id'=>$vendor->id],['royalty_percent'=>10,'is_active'=>1]);
         $book = Category::firstOrCreate(['slug'=>'book'],['name'=>'Book']);
         $bundle = Category::firstOrCreate(['slug'=>'book-bundle'],['name'=>'Book Bundle']);
@@ -27,5 +40,8 @@ class DatabaseSeeder extends Seeder {
         // NOTE: locations (countries/states/districts/areas + country_phonecodes) are the REAL
         // imported tables and are NOT seeded here. Load them with the SQL import
         // (docs/database_part*.sql + docs/locations_india.sql) - see docs/SETUP.md.
+
+        // Coaching demo data: abhishektuitioncenter@gmail.com / Abhishek
+        $this->call(CoachingDemoSeeder::class);
     }
 }

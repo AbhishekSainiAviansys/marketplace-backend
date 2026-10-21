@@ -1,0 +1,76 @@
+/* Home-only motion + pattern layer (shared kit untouched).
+ * All hand-rolled: marquee, float, kenburns, blob drift, shimmer,
+ * staggered reveal. Respects prefers-reduced-motion. */
+
+@keyframes st-marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes st-marquee-rev { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+@keyframes st-float { 0%,100% { transform: translateY(0) rotate(var(--tilt, 0deg)); } 50% { transform: translateY(-10px) rotate(var(--tilt, 0deg)); } }
+@keyframes st-float-sm { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes st-kenburns { 0% { transform: scale(1) translate(0,0); } 100% { transform: scale(1.12) translate(-1.5%, 1%); } }
+@keyframes st-blob { 0%,100% { transform: translate(0,0) scale(1); } 33% { transform: translate(24px,-18px) scale(1.08); } 66% { transform: translate(-18px,14px) scale(0.94); } }
+@keyframes st-shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes st-rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+@keyframes st-ping-dot { 0% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0.55); } 70% { box-shadow: 0 0 0 9px rgb(244 63 94 / 0); } 100% { box-shadow: 0 0 0 0 rgb(244 63 94 / 0); } }
+@keyframes st-spin-slow { to { transform: rotate(360deg); } }
+@keyframes st-tick { 0%,100% { transform: scale(1); } 50% { transform: scale(1.25); } }
+
+.st-marquee { display: flex; width: max-content; animation: st-marquee 28s linear infinite; }
+.st-marquee:hover { animation-play-state: paused; }
+.st-marquee-rev { display: flex; width: max-content; animation: st-marquee-rev 30s linear infinite; }
+.st-marquee-rev:hover { animation-play-state: paused; }
+.st-float { animation: st-float 5s ease-in-out infinite; }
+.st-float-sm { animation: st-float-sm 4s ease-in-out infinite; }
+.st-kenburns { animation: st-kenburns 18s ease-in-out infinite alternate; }
+.st-blob { animation: st-blob 12s ease-in-out infinite; }
+.st-rise { animation: st-rise 0.6s cubic-bezier(0.22,1,0.36,1) both; }
+.st-live-dot { animation: st-ping-dot 1.6s cubic-bezier(0.4,0,0.6,1) infinite; }
+.st-spin-slow { animation: st-spin-slow 14s linear infinite; }
+.st-tick { animation: st-tick 0.35s ease; display: inline-block; }
+
+.st-reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.6s cubic-bezier(0.22,1,0.36,1), transform 0.6s cubic-bezier(0.22,1,0.36,1); }
+.st-reveal.is-in { opacity: 1; transform: none; }
+
+.st-shimmer-line {
+  background: linear-gradient(100deg, transparent 30%, rgb(255 255 255 / 0.35) 50%, transparent 70%);
+  background-size: 200% 100%;
+  animation: st-shimmer 2.8s linear infinite;
+}
+
+.st-dots {
+  background-image: radial-gradient(rgb(255 255 255 / 0.22) 1.2px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+.st-dots-dark {
+  background-image: radial-gradient(rgb(15 23 42 / 0.10) 1.2px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+.st-paper-lines {
+  background-image: repeating-linear-gradient(to bottom, transparent 0 26px, rgb(99 102 241 / 0.14) 26px 27px);
+}
+
+.st-no-scrollbar::-webkit-scrollbar { display: none; }
+.st-no-scrollbar { scrollbar-width: none; }
+
+/* Modern touch: gradient text helper + subtle gradient border for feature cards. */
+.st-gradient-text {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+/* Editorial helpers: warm paper band + display serif for human-crafted headings. */
+.st-paper-band {
+  background:
+    radial-gradient(1200px 300px at 10% -10%, color-mix(in srgb, var(--brand, var(--color-brand-600)) 7%, transparent), transparent 60%),
+    linear-gradient(to bottom, color-mix(in srgb, var(--brand, var(--color-brand-600)) 5%, transparent), transparent 40%);
+}
+.st-display {
+  font-family: Georgia, 'Times New Roman', 'Noto Serif', serif;
+  letter-spacing: -0.01em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .st-marquee, .st-marquee-rev, .st-float, .st-float-sm, .st-kenburns, .st-blob,
+  .st-shimmer-line, .st-spin-slow, .st-rise, .st-live-dot { animation: none !important; }
+  .st-reveal { opacity: 1; transform: none; transition: none; }
+}

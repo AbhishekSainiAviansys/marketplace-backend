@@ -1,0 +1,14 @@
+/* Marketplace SPA entry stylesheet.
+ *
+ * The whole design system lives in ONE file shared by all four panels:
+ *   ./ui/design.css
+ * Editing it re-skins admin / vendor / school / student at once.
+ *
+ * source(none) disables Tailwind's automatic scanning, then the explicit
+ * @source glob below re-registers exactly what we need, so class detection is
+ * deterministic instead of depending on where this file lives.
+ */
+@import "tailwindcss" source(none);
+@import "./ui/design.css";
+
+@source "./**/*.tsx";

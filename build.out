@@ -1,0 +1,40 @@
+
+> build
+> tsc -b && vite build
+
+
+<--- Last few GCs --->
+
+[21972:000001FD28CB1000]     2329 ms: Scavenge (interleaved) 211.3 (276.7) -> 151.3 (278.9) MB, pooled: 0 MB, 2.60 / 0.00 ms  (average mu = 0.984, current mu = 0.984) allocation failure; 
+[21972:000001FD28CB1000]     2475 ms: Scavenge (interleaved) 214.4 (279.2) -> 154.8 (281.7) MB, pooled: 0 MB, 2.99 / 0.00 ms  (average mu = 0.984, current mu = 0.984) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+
+<--- Last few GCs --->
+
+[21972:000001FD28CB1000]     2329 ms: Scavenge (interleaved) 211.3 (276.7) -> 151.3 (278.9) MB, pooled: 0 MB, 2.60 / 0.00 ms  (average mu = 0.984, current mu = 0.984) allocation failure; 
+[21972:000001FD28CB1000]     2475 ms: Scavenge (interleaved) 214.4 (279.2) -> 154.8 (281.7) MB, pooled: 0 MB, 2.99 / 0.00 ms  (average mu = 0.984, current mu = 0.984) allocation failure; 
+
+FATAL ERROR: Zone Allocation failed - process out of memory
+----- Native stack trace -----
+
+ 1: 00007FF700681E1F 
+ 2: 00007FF6FF293617 
+ 3: 00007FF6FEC0B506 
+ 4: 00007FF6FFE9E4AF 
+ 5: 00007FF6FFE9DD2F 
+ 6: 00007FF6FFE9DBAF 
+ 7: 00007FF6FFCACB06 
+ 8: 00007FF6FFCA5376 
+ 9: 00007FF6FFCA47F0 
+10: 00007FF6FF2072CF 
+11: 00007FF6FF1CC31D 
+12: 00007FF6FF1CC015 
+13: 00007FF6FFA90E7F 
+14: 00007FF7005C364B 
+15: 00007FF6FF2E8A26 
+16: 00007FF7009C00F3 
+17: 00007FFD3E85CDF7 BaseThreadInitThunk+23
+18: 00007FFD3F5BEE4C 

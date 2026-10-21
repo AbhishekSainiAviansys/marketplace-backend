@@ -38,4 +38,38 @@ class LocationController extends Controller {
     public function phonecodes(){
         return DB::table('country_phonecodes')->orderByDesc('is_default')->orderBy('country_name')->get();
     }
+    public function schools(Request $r){
+        $d=$r->validate([
+            'q'=>'nullable|string|max:100',
+            'country_id'=>'nullable|integer',
+            'state_id'=>'nullable|string|max:32',
+            'district_id'=>'nullable|integer',
+            'limit'=>'nullable|integer|min:1|max:100',
+        ]);
+        $q=DB::table('school_new')
+            ->select('id','school_name as name','school_code','country','state','district','city')
+            ->where('school_status','Active')
+            ->whereNotExists(function($sub){
+                $sub->selectRaw('1')->from('schools')
+                    ->whereColumn('schools.school_code','school_new.school_code');
+            });
+        if(!empty($d['country_id'])) $q->where('country',$d['country_id']);
+        if(!empty($d['state_id'])){
+            $state=DB::table('states')->where('state_subdivision_id',$d['state_id'])->value('state_subdivision_name');
+            if(!$state) return response()->json([]);
+            $q->where('state',$state);
+        }
+        // if(!empty($d['district_id'])){
+        //     $district=DB::table('districts')->where('id',$d['district_id'])->value('district_name');
+        //     if(!$district) return response()->json([]);
+        //     $q->where('district',$district);
+        // }
+        if(!empty($d['q'])){
+            $term=trim($d['q']);
+            $q->where(function($x) use ($term){
+                $x->where('school_name','like','%'.$term.'%')->orWhere('school_code','like','%'.$term.'%');
+            });
+        }
+        return $q->orderBy('school_name')->limit($d['limit']??100)->get();
+    }
 }

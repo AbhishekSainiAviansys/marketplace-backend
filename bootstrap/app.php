@@ -36,8 +36,10 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(null);
 
         // Route-level role guard used in routes/api.php: middleware('role:admin')
+        // and the Amazon-style go-live gate: middleware('approved')
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'approved' => \App\Http\Middleware\ApprovedMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

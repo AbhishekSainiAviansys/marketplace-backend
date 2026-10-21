@@ -1,0 +1,9 @@
+resources/js/admin/App.tsx(12,25): error TS2307: Cannot find module './pages/Vendors' or its corresponding type declarations.
+resources/js/admin/pages/LocationFilters.tsx(3,1): error TS6133: 'Field' is declared but its value is never read.
+resources/js/admin/pages/LocationFilters.tsx(3,23): error TS2307: Cannot find module './ui' or its corresponding type declarations.
+resources/js/admin/pages/vendorsProfile.tsx(3,25): error TS6196: 'Status' is declared but never used.
+resources/js/admin/pages/vendorsProfile.tsx(8,32): error TS2322: Type 'Record<string, unknown> | null | undefined' is not assignable to type 'Record<string, unknown> | null'.
+  Type 'undefined' is not assignable to type 'Record<string, unknown> | null'.
+resources/js/admin/pages/vendorsTable.tsx(4,52): error TS6133: 'LocNames' is declared but its value is never read.
+resources/js/admin/pages/vendorsTable.tsx(7,23): error TS6133: 'stats' is declared but its value is never read.
+resources/js/admin/pages/vendorsTable.tsx(7,30): error TS6133: 'status' is declared but its value is never read.

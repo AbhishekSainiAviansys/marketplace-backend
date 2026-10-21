@@ -30,6 +30,8 @@ class SettingController extends Controller {
     }
     // GET /admin/settings/public – safe keys for checkout UIs
     // Deliberately unauthenticated: the Login page renders the logo before sign-in.
+    // Also ships the admin-managed storefront home content (Admin -> Home content)
+    // and the theme switch (solid vs gradient accent surfaces).
     public function public(){
         return response()->json([
             'razorpay_key_id'=>Setting::getVal('razorpay_key_id'),
@@ -37,6 +39,13 @@ class SettingController extends Controller {
             'app_name'=>Setting::getVal('app_name',config('app.name')),
             'branding_logo'=>Setting::getVal('branding_logo'),
             'brand_primary'=>Setting::getVal('brand_primary'),
+            'brand_secondary'=>Setting::getVal('brand_secondary'),
+            'button_style'=>Setting::getVal('button_style','solid'),
+            'home_content'=>json_decode((string)Setting::getVal('home_content',''),true) ?: [],
+            'home_boost_ids'=>json_decode((string)Setting::getVal('home_boost_ids',''),true) ?: [],
+            'site_pages'=>json_decode((string)Setting::getVal('site_pages',''),true) ?: [],
+            'contact_info'=>json_decode((string)Setting::getVal('contact_info',''),true) ?: [],
+            'social_links'=>json_decode((string)Setting::getVal('social_links',''),true) ?: [],
         ]);
     }
     // POST /admin/settings/test-mail – verifies SMTP/Mailpit works
@@ -48,7 +57,9 @@ class SettingController extends Controller {
 
     // Group new keys sensibly so the Admin Settings screen stays organised.
     private function groupFor($k){
-        if(str_starts_with($k,'branding_') || in_array($k,['app_name','brand_primary'],true)) return 'branding';
+        if(str_starts_with($k,'home_')) return 'home';
+        if(in_array($k,['site_pages','contact_info','social_links'],true)) return 'site';
+        if(str_starts_with($k,'branding_') || in_array($k,['app_name','brand_primary','brand_secondary','button_style'],true)) return 'branding';
         if(str_starts_with($k,'razorpay_') || str_contains($k,'payment')) return 'payment';
         if(str_starts_with($k,'mail_')) return 'mail';
         if(str_starts_with($k,'otp_')) return 'otp';
