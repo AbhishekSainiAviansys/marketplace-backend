@@ -1,11 +1,11 @@
 /** Admin -> Schools profile view (part 2b). */
 import { Building2, MapPin, Lock } from 'lucide-react'
-import { type LocNames, type SchoolRow, type SchoolProfile } from './schoolsTypes'
+import { STATUS_BADGE, STATUS_LABEL, type LocNames, type SchoolProfile, type SchoolRow } from './schoolsTypes'
 
-export function SchoolProfileView({ profile, locNames }: { profile: SchoolRow & { school: SchoolProfile | null }; locNames: LocNames | null }) {
-  const statusClass = { Active: 'bg-emerald-100 text-emerald-700', Inactive: 'bg-amber-100 text-amber-700', Deleted: 'bg-red-100 text-red-700' }[profile.school_status]
-  const statusLabel = { Active: 'Active', Inactive: 'Inactive', Deleted: 'Deleted' }[profile.school_status]
-const principal = [profile.principal_titile, profile.school_principal_name].filter(Boolean).join(' ').trim() || '—'
+export function SchoolProfileView({ profile, locNames }: { profile: (SchoolRow & SchoolProfile); locNames: LocNames | null }) {
+  const statusClass = STATUS_BADGE[profile.school_status] ?? STATUS_BADGE['Deleted']
+  const statusLabel = STATUS_LABEL[profile.school_status] ?? profile.school_status ?? 'Unknown'
+  const principal = [profile.principal_titile, profile.school_principal_name].filter(Boolean).join(' ').trim() || '—'
   const coordinator = [profile.coordinator_titile, profile.school_coordinator_name].filter(Boolean).join(' ').trim() || '—'
   const boardMedium = [profile.school_board, profile.school_medium].filter(Boolean).join(' / ').trim() || '—'
   const email = profile.school_email ?? profile.email ?? null
@@ -55,16 +55,16 @@ const principal = [profile.principal_titile, profile.school_principal_name].filt
         </p>
       )}
       <section>
-        {!profile.school && (
+        {(profile.vendors ?? []).length === 0 && (
           <p className="mt-1 text-xs text-amber-600">Not onboarded yet — no onboarding record or vendors linked for this directory entry.</p>
         )}
-        <h3 className="text-sm font-bold text-slate-900">Linked vendors ({profile.school?.vendors?.length ?? 0})</h3>
-        {(profile.school?.vendors ?? []).length === 0 && (
+        <h3 className="text-sm font-bold text-slate-900">Linked vendors ({profile.vendors?.length ?? 0})</h3>
+        {(profile.vendors ?? []).length === 0 && (
           <p className="mt-1 text-xs text-slate-400">No vendor pickup links yet — assign them from the Vendors screen.</p>
         )}
-        {(profile.school?.vendors ?? []).length > 0 && (
+        {(profile.vendors ?? []).length > 0 && (
           <ul className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-200">
-            {(profile.school?.vendors ?? []).map((s) => (
+            {(profile.vendors ?? []).map((s) => (
               <li key={s.id} className="flex items-center justify-between px-3 py-2 text-sm">
                 <span className="font-medium text-slate-700">{s.shop_name}</span>
                 <span className="text-xs text-slate-500">{s.pivot?.royalty_percent ?? 0}% royalty</span>
@@ -75,4 +75,5 @@ const principal = [profile.principal_titile, profile.school_principal_name].filt
       </section>
     </div>
   )
+  
 }

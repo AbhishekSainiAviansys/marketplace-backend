@@ -26,7 +26,7 @@ class DirectoryFilterTest extends TestCase
             $t->timestamp('last_used_at')->nullable(); $t->timestamp('expires_at')->nullable();
             $t->timestamps();
         });
-        Schema::create('schools', function ($t) {
+         Schema::create('schools', function ($t) {
             $t->id(); $t->unsignedBigInteger('user_id')->nullable()->unique();
             $t->string('school_code', 20)->unique(); $t->string('name');
             $t->text('address')->nullable(); $t->boolean('is_independent')->default(false);
@@ -34,6 +34,25 @@ class DirectoryFilterTest extends TestCase
             $t->json('onboarding')->nullable();
             $t->string('onboarding_status', 20)->default('approved');
             $t->timestamp('submitted_at')->nullable();
+            $t->timestamp('reviewed_at')->nullable();
+            $t->text('review_notes')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('school_new', function ($t) {
+            $t->id();
+            $t->string('school_name', 150);
+            $t->string('school_code', 20)->nullable();
+            $t->string('school_email')->nullable();
+            $t->string('school_phone', 20)->nullable();
+            $t->string('school_mobile', 20)->nullable();
+            $t->string('city')->nullable();
+            $t->string('district')->nullable();
+            $t->string('state')->nullable();
+            $t->string('country')->nullable();
+            $t->string('country_name')->nullable();
+            $t->string('state_name')->nullable();
+            $t->string('district_name')->nullable();
+            $t->string('school_status', 30)->default('Active');
             $t->timestamp('reviewed_at')->nullable();
             $t->text('review_notes')->nullable();
             $t->timestamps();
@@ -117,7 +136,7 @@ class DirectoryFilterTest extends TestCase
             'role' => 'school',
             'is_active' => true,
         ]);
-        return School::create([
+        $school = School::create([
             'user_id' => $user->id,
             'school_code' => $code,
             'name' => $name,
@@ -131,6 +150,22 @@ class DirectoryFilterTest extends TestCase
                 ],
             ],
         ]);
+        // Also create in school_new for admin API directory filter (country/state/district columns)
+        \DB::table('school_new')->insertGetId([
+            'school_name' => $name,
+            'school_code' => $code,
+            'school_email' => strtolower(str_replace(' ', '', $name)).'@test.local',
+            'school_mobile' => '',
+            'city' => '',
+            'district' => '',
+            'state' => '',
+            'country' => $countryId,
+            'country_name' => 'India',
+            'state_name' => 'Uttar Pradesh',
+            'district_name' => 'Lucknow',
+            'school_status' => 'Active',
+        ]);
+        return $school;
     }
 
     private function makeVendor(string $shopName, string $countryId, string $stateId, int $districtId): Vendor

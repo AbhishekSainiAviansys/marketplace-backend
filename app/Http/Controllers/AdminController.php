@@ -178,16 +178,27 @@ class AdminController extends Controller {
      * directory vocabulary before filtering.
      */
     public function schoolIndex(Request $r){
-        $q = \DB::table('school_new')->select('school_new.*', 'school_name as name', 'school_email as email', 'school_mobile as whatsapp')->orderByDesc('id');
+        $q = \DB::table('school_new')->select('school_new.*', 'school_name as name', 'school_email as email', 'school_mobile as whatsapp');
 
         // ---- status filter (with vocabulary mapping) ----
         if($r->filled('status')){
             $status = (string) $r->string('status');
             $statusMap = [
-                'submitted' => 'Active',
-                'approved'  => 'Active',
-                'rejected'  => 'Inactive',
-                'draft'     => 'Inactive',
+                'submitted'  => 'Active',
+                'approved'   => 'Active',
+                'active'     => 'Active',
+                'Active'     => 'Active',
+                'rejected'   => 'Rejected',
+                'Rejected'   => 'Rejected',
+                'draft'      => 'Drafted',
+                'drafted'    => 'Drafted',
+                'Drafted'    => 'Drafted',
+                'inactive'   => 'Inactive',
+                'Inactive'   => 'Inactive',
+                'deleted'    => 'Deleted',
+                'Deleted'    => 'Deleted',
+                'need_review' => 'Need Review',
+                'Need Review' => 'Need Review',
             ];
             if (isset($statusMap[$status])) $status = $statusMap[$status];
             $q->where('school_status', $status);
@@ -225,10 +236,30 @@ class AdminController extends Controller {
             }
         }
 
-        return $q->paginate(20);
-    }
+        // ---- sorting + pagination ----
+        $perPage = (int) $r->input('per_page', 20);
+        if (!in_array($perPage, [10,20,50], true)) $perPage = 20;
+        $sortField = (string) $r->input('sort_by', 'id');
+        $sortMap = ['school_name'=>'school_name','school_status'=>'school_status','id'=>'id'];
+        $sortCol = $sortMap[$sortField] ?? 'id';
+        $sortDir = strtolower((string)$r->input('sort_dir','desc')) === 'asc' ? 'asc' : 'desc';
+        $q->orderBy($sortCol, $sortDir);
 
-    public function schoolStore(Request $r){
+        $page = $q->paginate($perPage);
+
+        // Attach the onboarding School record (if this directory entry has
+        if (\Illuminate\Support\Facades\Schema::hasTable('schools')) {
+            $codes = $page->getCollection()->pluck('school_code')->filter()->unique()->values()->all();
+            $loads = (\Illuminate\Support\Facades\Schema::hasTable('vendors') && \Illuminate\Support\Facades\Schema::hasTable('school_vendor')) ? ['vendors'] : [];
+            $onboardings = \App\Models\School::with($loads)->whereIn('school_code', $codes)->get()->keyBy('school_code');
+            $page->getCollection()->transform(function ($row) use ($onboardings) {
+                $onb = $onboardings->get($row->school_code ?? null);
+                $row->school = $onb ? $onb->toArray() : null;
+                return $row;
+            });
+        }
+
+        return $page;
         $d=$r->validate(['name'=>'required','email'=>'nullable|email|unique:users','whatsapp'=>'nullable|unique:users','password'=>'required|min:6','school_name'=>'required','school_code'=>'required|unique:schools','is_independent'=>'boolean','class_list'=>'array']);
         $u=User::create(['name'=>$d['name'],'email'=>$d['email']??null,'whatsapp'=>$d['whatsapp']??null,'password'=>Hash::make($d['password']),'role'=>'school']);
         $s=$u->school()->create(['school_code'=>$d['school_code'],'name'=>$d['school_name'],'is_independent'=>$d['is_independent']??false,'class_list'=>$d['class_list']??[]]);
@@ -253,7 +284,7 @@ class AdminController extends Controller {
         if(\Illuminate\Support\Facades\Schema::hasTable('schools')){
             $q = School::query();
             $loads = [];
-            if(\Illuminate\Support\Facades\Schema::hasTable('vendors')) $loads[] = 'vendors';
+            if(\Illuminate\Support\Facades\Schema::hasTable('vendors') && \Illuminate\Support\Facades\Schema::hasTable('school_vendor')) $loads[] = 'vendors';
             if(\Illuminate\Support\Facades\Schema::hasTable('users')) $loads[] = 'user';
             if($loads) $q = $q->with($loads);
             $s = $q->find($id);
@@ -271,7 +302,7 @@ class AdminController extends Controller {
             $onboarding = null;
             if(\Illuminate\Support\Facades\Schema::hasTable('schools')){
                 $query = School::where('school_code', $row->school_code);
-                if(\Illuminate\Support\Facades\Schema::hasTable('vendors')){
+                if(\Illuminate\Support\Facades\Schema::hasTable('vendors') && \Illuminate\Support\Facades\Schema::hasTable('school_vendor')){
                     $query = $query->with('vendors');
                 }
                 $onboarding = $query->first();

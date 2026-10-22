@@ -11,6 +11,7 @@ import { HomeContent } from './pages/HomeContent'
 import { SitePages } from './pages/SitePages'
 import { Vendors } from './pages/Vendors'
 import { Schools } from './pages/Schools'
+import { SchoolProfilePage } from './pages/SchoolProfilePage'
 import { AppShell, icons, type NavItem } from '@ui'
 
 const ROLE = 'admin'
@@ -77,6 +78,7 @@ function Shell() {
   if (pathname === '/') page = <Dashboard role={ROLE} prefix={PREFIX} />
   else if (pathname === '/vendors') page = <Vendors />
   else if (pathname === '/schools') page = <Schools />
+  else if (pathname === '/schools/profile') page = <SchoolProfilePage />
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
   else if (pathname === '/home-content') page = <HomeContent />
   else if (pathname === '/pages-footer') page = <SitePages />

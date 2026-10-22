@@ -211,7 +211,7 @@ const DEFAULT: Content = {
   footer: {
     blurb: 'Books, bundles and bottles linked to your school — pay online or Cash on Delivery, collect at school or home.',
     promise: 'Free pickup on most items',
-    bottom: 'Books · Bundles · Bottles — built for students, trusted by parents.',
+    bottom: 'Powered By : Aviansys Technology Pvt. Ltd.',
   },
 }
 
