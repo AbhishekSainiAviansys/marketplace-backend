@@ -21,9 +21,9 @@ class AuthController extends Controller {
             'phone_country_code'=>'nullable|string|max:8',
             'whatsapp'=>'nullable|string|max:15',
             'password'=>'required|min:6',
-            'role'=>'required|in:vendor,school,coaching',
+            'role'=>'required|in:vendor,school,coaching,student',
             'shop_name'=>'required_if:role,vendor',
-            'school_code'=>'nullable|string|unique:schools',
+            'school_code'=>'nullable|string|max:64',
             'school_name'=>'required_if:role,school',
             // Coaching centre / private tutor institute (/coaching/register).
             // Per-type details: coaching = centre + batches; institute = team +
@@ -115,6 +115,8 @@ class AuthController extends Controller {
                  'medium_of_instruction'=>$d['medium_of_instruction']??null,'student_strength'=>$d['student_strength']??null,
                  'streams'=>$d['streams']??null,'classes'=>$d['classes']??null]
             );
+        } else if ($d['role']==='student') {
+            // Students have no institute profile model; nothing extra to create.
         } else {
             // Coaching centre / private tutor institute - instant activation.
             // Per-type hard requirements (beyond the lenient nullable rules):
@@ -226,6 +228,16 @@ class AuthController extends Controller {
             return response()->json(['message'=>$msg,'code'=>'onboarding_'.$c->onboarding_status,
                 'notes'=>$c->review_notes,'onboarding'=>['status'=>$c->onboarding_status]], 403);
         }
+                // Create or find school by school_code, associate with user
+        if ($r->filled('school_code') || $r->filled('school_name')) {
+            $schoolCode = $r->input('school_code') ?? 'NEW';
+            $schoolName = $r->input('school_name') ?? '';
+            $school = School::firstOrCreate(
+                ['school_code' => $schoolCode],
+                ['user_id' => $user->id, 'name' => $schoolName]
+            );
+        }
+
         return response()->json(['token'=>$user->createToken('api')->plainTextToken,'user'=>$user]);
     }
     public function logout(Request $r){ $r->user()->currentAccessToken()->delete(); return response()->json(['message'=>'Logged out']); }

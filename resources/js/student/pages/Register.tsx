@@ -44,21 +44,49 @@ export function Register() {
       setVerified(true)
     } catch (e) { setErr(errMsg(e, 'OTP verification failed')) } finally { setBusy(false) }
   }
-  const finish = (e: React.FormEvent) => {
+  const finish = async (e: React.FormEvent) => {
     e.preventDefault()
+    setErr('')
     if (!verified) { setErr('Verify the email OTP first'); return }
     if (form.newSchool && !form.schoolName.trim()) { setErr('Enter your school name'); return }
     if (!form.newSchool && !form.schoolCode.trim()) { setErr('Choose your school or enter its school code'); return }
-    save({
+    const payload = {
       name: form.name.trim(),
-      className: form.className,
-      schoolCode: form.newSchool ? 'NEW' : form.schoolCode.trim(),
-      schoolName: form.schoolName.trim() || undefined,
-      whatsapp: form.whatsapp.trim(),
-      phoneCountryCode: form.phoneCountryCode,
       email: form.email.trim() || undefined,
-    })
-    nav('/', { replace: true })
+      whatsapp: form.whatsapp.trim() || undefined,
+      phone_country_code: form.phoneCountryCode,
+      password: form.password,
+      role: 'student',
+      school_code: form.newSchool ? 'NEW' : form.schoolCode.trim(),
+      school_name: form.schoolName,
+    }
+    setBusy(true)
+    try {
+      const { data } = await api.post('/auth/register', payload)
+      if (!data?.token || !data?.user) {
+        throw new Error('Registration did not return a session token.')
+      }
+      if (data.user.role && data.user.role !== 'student') {
+        throw new Error(`This store is for student accounts (created as ${data.user.role}).`)
+      }
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      save({
+        name: data.user.name ?? form.name.trim(),
+        className: form.className,
+        schoolCode: form.newSchool ? 'NEW' : form.schoolCode.trim(),
+        schoolName: form.schoolName.trim() || undefined,
+        whatsapp: form.whatsapp.trim(),
+        phoneCountryCode: form.phoneCountryCode,
+        email: form.email.trim() || undefined,
+      })
+      nav('/', { replace: true })
+      return
+    } catch (cause) {
+      setErr(errMsg(cause, 'Could not create your account.'))
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (

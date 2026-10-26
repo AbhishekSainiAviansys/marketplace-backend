@@ -11,7 +11,7 @@ class ProductionSeeder extends Seeder {
         }
         // Locations are the REAL imported tables (countries/states/districts/areas +
         // country_phonecodes) and are NOT seeded here - load them via the SQL import.
-        foreach (['razorpay_key_id','razorpay_key_secret','razorpay_webhook_secret','payment_mode','mail_from_address','otp_expiry_min'] as $k) {
+        foreach (['payment_mode','mail_from_address','otp_expiry_min'] as $k) {
             if (! DB::table('settings')->where('key',$k)->exists()) {
                 DB::table('settings')->insert(['key'=>$k,'value'=>'','group'=>'payment','is_secret'=>str_contains($k,'secret')?1:0]);
             }

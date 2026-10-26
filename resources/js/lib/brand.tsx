@@ -10,6 +10,7 @@ import { api, apiOrigin } from './api'
 export type Brand = {
   appName: string
   logoUrl: string | null
+  iconUrl: string | null
   primary: string | null
   /** Gradient end colour (Admin → Settings → Branding). */
   secondary: string | null
@@ -17,41 +18,54 @@ export type Brand = {
   buttonStyle: 'solid' | 'gradient'
 }
 
-const FALLBACK: Brand = { appName: 'Marketplace', logoUrl: null, primary: null, secondary: null, buttonStyle: 'solid' }
+const FALLBACK: Brand = { appName: 'Marketplace', logoUrl: null, iconUrl: null, primary: null, secondary: null, buttonStyle: 'solid' }
 
 const HEX = /^#[0-9a-f]{3,8}$/i
 const hexOr = (v: unknown): string | null =>
   typeof v === 'string' && HEX.test(v.trim()) ? v.trim() : null
 
-const Ctx = createContext<Brand>(FALLBACK)
+type BrandCtxValue = { brand: Brand; refresh: () => Promise<void> }
+
+const Ctx = createContext<BrandCtxValue>({ brand: FALLBACK, refresh: async () => {} })
 
 export const BrandProvider = ({ children }: { children: ReactNode }) => {
   const [brand, setBrand] = useState<Brand>(FALLBACK)
 
+  const loadBrand = async () => {
+    try {
+      const r = await api.get('/settings/public')
+      const d = r.data ?? {}
+      const logo =
+        typeof d.branding_logo === 'string' && d.branding_logo.trim() ? d.branding_logo.trim() : null
+      const icon =
+        typeof d.branding_icon === 'string' && d.branding_icon.trim() ? d.branding_icon.trim() : null
+      setBrand({
+        appName: (typeof d.app_name === 'string' && d.app_name.trim()) || FALLBACK.appName,
+        logoUrl: logo,
+        iconUrl: icon,
+        primary: hexOr(d.brand_primary),
+        secondary: hexOr(d.brand_secondary),
+        buttonStyle: d.button_style === 'gradient' ? 'gradient' : 'solid',
+      })
+    } catch {
+      /* API offline - keep built-in defaults so the UI still renders */
+    }
+  }
+
   useEffect(() => {
     let alive = true
-    api
-      .get('/settings/public')
-      .then((r) => {
-        if (!alive) return
-        const d = r.data ?? {}
-        const logo =
-          typeof d.branding_logo === 'string' && d.branding_logo.trim() ? d.branding_logo.trim() : null
-        setBrand({
-          appName: (typeof d.app_name === 'string' && d.app_name.trim()) || FALLBACK.appName,
-          logoUrl: logo,
-          primary: hexOr(d.brand_primary),
-          secondary: hexOr(d.brand_secondary),
-          buttonStyle: d.button_style === 'gradient' ? 'gradient' : 'solid',
-        })
-      })
-      .catch(() => {
-        /* API offline - keep built-in defaults so the UI still renders */
-      })
+    ;(async () => {
+      if (!alive) return
+      await loadBrand()
+    })()
     return () => {
       alive = false
     }
   }, [])
+
+  const refresh = async () => {
+    await loadBrand()
+  }
 
   // Push the admin-chosen accent onto <html> so every `.accent-*` helper follows.
   useEffect(() => {
@@ -72,10 +86,24 @@ export const BrandProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [brand.primary, brand.secondary, brand.buttonStyle])
 
-  return <Ctx.Provider value={brand}>{children}</Ctx.Provider>
+  // Keep the browser tab icon in sync with the configured logo icon.
+  useEffect(() => {
+    const href = assetUrl(brand.iconUrl) || '/favicon.svg'
+    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    if (!link) {
+      link = document.createElement('link')
+      link.rel = 'icon'
+      document.head.appendChild(link)
+    }
+    link.href = href
+  }, [brand.iconUrl])
+
+  return <Ctx.Provider value={{ brand, refresh }}>{children}</Ctx.Provider>
 }
 
-export const useBrand = () => useContext(Ctx)
+export const useBrand = () => useContext(Ctx).brand
+
+export const useBrandRefresh = () => useContext(Ctx).refresh
 
 /** Turn a server-relative "/storage/..." path into a full URL on the API origin. */
 export const assetUrl = (p: string | null) =>

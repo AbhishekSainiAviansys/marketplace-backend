@@ -1,10 +1,10 @@
 /** Admin -> Vendors table (part 2a). */
-import { Loader2, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react'
 import { EmptyState } from '@ui'
 import { STATUS_BADGE, STATUS_LABEL, fmtDate, type VendorRow, type Status } from './vendorsTypes'
 
 export function VendorsTable({
-  rows, loading, err, status, page, lastPage, total, busyId, setPage, openProfile, setReview, setConfirmDelete
+  rows, loading, err, status, page, lastPage, total, perPage, sortBy, sortDir, setPage, onSort, onPerPage, busyId, openProfile, setReview, setConfirmDelete
 }: {
   rows: VendorRow[]
   loading: boolean
@@ -13,14 +13,34 @@ export function VendorsTable({
   page: number
   lastPage: number
   total: number
-  busyId: number | null
+  perPage: number
+  sortBy: string
+  sortDir: 'asc' | 'desc'
   setPage: (f: (p: number) => number) => void
+  onSort: (field: string) => void
+  onPerPage: (n: number) => void
+  busyId: number | null
   openProfile: (row: VendorRow) => void
   setReview: (row: VendorRow, action: 'approve' | 'reject') => void
   setConfirmDelete: (row: VendorRow) => void
 }) {
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortBy !== field) return null
+    return sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />
+  }
   return (
     <>
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-slate-500">Page {page} of {lastPage} · {total} vendor{total !== 1 ? 's' : ''}</p>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <span>Per page</span>
+          <select value={perPage} onChange={(e) => onPerPage(Number(e.target.value))} className="field !py-1 !text-xs w-16">
+            <option value={10}>10</option>
+            <option value={20}>20</option>
+            <option value={50}>50</option>
+          </select>
+        </label>
+      </div>
       <div className="card overflow-hidden p-0">
         {err && <div className="border-b border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>}
         {loading && rows.length === 0 ? (
@@ -36,9 +56,22 @@ export function VendorsTable({
             <table className="min-w-full text-left">
               <thead>
                 <tr className="bg-slate-50">
-                  {['Shop', 'Contact', 'Status', 'Submitted', 'Products', 'Actions'].map((h) => (
-                    <th key={h} className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase">{h}</th>
-                  ))}
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onClick={() => onSort('shop_name')}>
+                    <span className="flex items-center gap-1">Shop <SortIcon field="shop_name" /></span>
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onClick={() => onSort('name')}>
+                    <span className="flex items-center gap-1">Contact <SortIcon field="name" /></span>
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onClick={() => onSort('onboarding_status')}>
+                    <span className="flex items-center gap-1">Status <SortIcon field="onboarding_status" /></span>
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onClick={() => onSort('submitted_at')}>
+                    <span className="flex items-center gap-1">Submitted <SortIcon field="submitted_at" /></span>
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase cursor-pointer select-none" onClick={() => onSort('products_count')}>
+                    <span className="flex items-center gap-1">Products <SortIcon field="products_count" /></span>
+                  </th>
+                  <th className="border-b border-slate-200 px-4 py-3 text-xs font-semibold text-slate-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody>

@@ -11,7 +11,15 @@ import { HomeContent } from './pages/HomeContent'
 import { SitePages } from './pages/SitePages'
 import { Vendors } from './pages/Vendors'
 import { Schools } from './pages/Schools'
+import { Coaching } from './pages/Coaching'
 import { SchoolProfilePage } from './pages/SchoolProfilePage'
+import { Students } from './pages/Students'
+import { OrderLedger } from './pages/OrderLedger'
+import { OrderDetail } from './pages/OrderDetail'
+import { StudentProfilePage } from './pages/StudentProfilePage'
+import { Categories } from './pages/Categories'
+import { Coupons } from './pages/Coupons'
+import { Products } from './pages/Products'
 import { AppShell, icons, type NavItem } from '@ui'
 
 const ROLE = 'admin'
@@ -21,8 +29,12 @@ const NAV: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: icons.dashboard, end: true },
   { to: '/vendors', label: 'Vendors', icon: icons.store },
   { to: '/schools', label: 'Schools', icon: icons.school },
+  { to: '/coaching', label: 'Coaching institutes', icon: icons.building },
+  { to: '/students', label: 'Students', icon: icons.users },
+  { to: '/order-ledger', label: 'Admin Order Ledger', icon: icons.coins },
   { to: '/categories', label: 'Categories', icon: icons.tags },
-  { to: '/products', label: 'Products', icon: icons.package },
+  { to: '/coupons', label: 'Coupons', icon: icons.tags },
+  { to: '/products', label: 'Admin Products', icon: icons.package },
   { to: '/products/new', label: 'Add Product', icon: icons.plus },
   { to: '/home-content', label: 'Home content', icon: <HomeIcon className="h-4 w-4" /> },
   { to: '/pages-footer', label: 'Pages & Footer', icon: <FileText className="h-4 w-4" /> },
@@ -33,8 +45,12 @@ const TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/vendors': 'Vendors',
   '/schools': 'Schools',
+  '/coaching': 'Coaching institutes',
+  '/students': 'Students',
+  '/order-ledger': 'Admin Order Ledger',
   '/categories': 'Categories',
-  '/products': 'Products',
+  '/coupons': 'Coupons',
+  '/products': 'Admin Products',
   '/products/new': 'Add product',
   '/home-content': 'Home content',
   '/pages-footer': 'Pages & Footer',
@@ -78,14 +94,23 @@ function Shell() {
   if (pathname === '/') page = <Dashboard role={ROLE} prefix={PREFIX} />
   else if (pathname === '/vendors') page = <Vendors />
   else if (pathname === '/schools') page = <Schools />
+  else if (pathname === '/coaching') page = <Coaching />
+  else if (pathname === '/students') page = <Students />
+  else if (pathname === '/order-ledger') page = <OrderLedger />
+  else if (/^\/order-ledger\/\d+$/.test(pathname)) page = <OrderDetail />
+  else if (pathname === '/students/profile') page = <StudentProfilePage />
+  else if (pathname === '/categories') page = <Categories />
+  else if (pathname === '/coupons') page = <Coupons />
+else if (pathname === '/products') page = <Products />
   else if (pathname === '/schools/profile') page = <SchoolProfilePage />
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
+  else if (/^\/products\/\d+\/edit$/.test(pathname)) page = <ProductForm prefix={PREFIX} id={pathname.split('/')[2]} />
   else if (pathname === '/home-content') page = <HomeContent />
   else if (pathname === '/pages-footer') page = <SitePages />
   else if (pathname === '/settings') page = <Settings />
   else page = <Placeholder path={pathname} />
 
-  return <AppShell title={TITLES[pathname] ?? 'Admin panel'} nav={NAV}>{page}</AppShell>
+  return <AppShell title={TITLES[pathname] ?? (pathname.includes('/edit') ? 'Edit product' : 'Admin panel')} nav={NAV}>{page}</AppShell>
 }
 
 function Placeholder({ path }: { path: string }) {

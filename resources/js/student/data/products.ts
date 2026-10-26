@@ -19,6 +19,7 @@ export type Product = {
   stock: number
   image: string
   delivery: DeliveryMode
+  deliveryCharge?: number | null
   schoolCode: string
   classTag: string
   blurb: string

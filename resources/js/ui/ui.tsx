@@ -5,7 +5,7 @@
  * and the icon set are defined once and imported everywhere, so a design change
  * lands in all three UIs at once. Visual decisions live in shared/design.css.
  */
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertCircle,
@@ -550,7 +550,7 @@ export function AppShell({
 }) {
   const [drawer, setDrawer] = useState(false)
   const [rail, setRail] = useState(() => localStorage.getItem(RAIL_KEY) === '1')
-  const { appName } = useBrand()
+  const { appName, iconUrl } = useBrand()
   const { user } = useAuth()
   const { theme, toggle } = useTheme()
   const location = useLocation()
@@ -621,7 +621,11 @@ export function AppShell({
       >
         {compact ? (
           <span className="accent-bg flex h-9 w-9 items-center justify-center rounded-xl text-xs font-bold text-white">
-            {initials(appName)}
+            {iconUrl ? (
+              <img src={assetUrl(iconUrl) ?? undefined} alt="brand" className="h-5 w-5 object-contain" onError={(e) => { e.currentTarget.style.display = 'none' }} />
+            ) : (
+              initials(appName)
+            )}
           </span>
         ) : (
           <Logo />
@@ -741,6 +745,56 @@ export function AppShell({
     </div>
   )
 }
+
+/* =========================================================================
+   Toasts
+   ========================================================================= */
+type ToastKind = 'ok' | 'err' | 'info'
+type ToastItem = { id: number; kind: ToastKind; text: string }
+
+const ToastContext = createContext<{ toast: (kind: ToastKind, text: string) => void } | null>(null)
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<ToastItem[]>([])
+  const nextId = useRef(1)
+
+  const remove = useCallback((id: number) => setItems((prev) => prev.filter((t) => t.id !== id)), [])
+  const toast = useCallback((kind: ToastKind, text: string) => {
+    const id = nextId.current++
+    setItems((prev) => [...prev, { id, kind, text }])
+    window.setTimeout(() => remove(id), 4200)
+  }, [remove])
+
+  return (
+    <ToastContext.Provider value={{ toast }}>
+      {children}
+      <div className="fixed right-4 top-4 z-[100] flex w-full max-w-sm flex-col gap-2">
+        {items.map((t) => (
+          <div
+            key={t.id}
+            className={`rounded-xl border px-4 py-3 text-sm shadow-lg backdrop-blur ${
+              t.kind === 'ok'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : t.kind === 'err'
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-slate-200 bg-white text-slate-700'
+            }`}
+            role="status"
+          >
+            {t.text}
+          </div>
+        ))}
+      </div>
+    </ToastContext.Provider>
+  )
+}
+
+export function useToast() {
+  const ctx = useContext(ToastContext)
+  if (!ctx) throw new Error('useToast must be used inside ToastProvider')
+  return ctx.toast
+}
+
 
 /** Shared icon set so all three panels stay visually consistent. */
 export const icons = {

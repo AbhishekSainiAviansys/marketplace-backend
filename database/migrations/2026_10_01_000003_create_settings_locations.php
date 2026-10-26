@@ -55,9 +55,6 @@ return new class extends Migration {
             if (!Schema::hasColumn('schools','address_id')) $t->foreignId('address_id')->nullable()->nullOnDelete();
         });
         $rows = [
-            ['razorpay_key_id','rzp_test_XXXXXXXX','payment',0],
-            ['razorpay_key_secret','test_secret_xxx','payment',1],
-            ['razorpay_webhook_secret','whsec_xxx','payment',1],
             ['payment_mode','test','payment',0],
             ['mail_from_address','noreply@market.local','mail',0],
             ['otp_expiry_min','10','otp',0],

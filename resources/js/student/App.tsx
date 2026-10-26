@@ -21,6 +21,8 @@ import { Cart } from './pages/Cart'
 import { Wishlist } from './pages/Wishlist'
 import { Checkout } from './pages/Checkout'
 import { Orders, Track } from './pages/Orders'
+import { OrderDetail } from './pages/OrderDetail'
+import { Profile } from './pages/Profile'
 import { Contact, Privacy, RefundPolicy, ReturnPolicy, Terms } from './pages/InfoPage'
 import { Sell } from './pages/Sell'
 import { Directory } from './pages/Directory'
@@ -43,6 +45,8 @@ export default function App({ basename = '/' }: { basename?: string }) {
                 <Route path="/wishlist" element={<Wishlist />} />
                 <Route path="/checkout" element={<Checkout />} />
                 <Route path="/orders" element={<Orders />} />
+                <Route path="/orders/:id" element={<OrderDetail />} />
+                <Route path="/profile" element={<Profile />} />
                 <Route path="/track" element={<Track />} />
                 <Route path="/privacy-policy" element={<Privacy />} />
                 <Route path="/return-policy" element={<ReturnPolicy />} />

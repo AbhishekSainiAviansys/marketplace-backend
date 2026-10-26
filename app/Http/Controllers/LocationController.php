@@ -42,28 +42,29 @@ class LocationController extends Controller {
         $d=$r->validate([
             'q'=>'nullable|string|max:100',
             'country_id'=>'nullable|integer',
-            'state_id'=>'nullable|string|max:32',
+            'state_id'=>'nullable',
             'district_id'=>'nullable|integer',
             'limit'=>'nullable|integer|min:1|max:100',
         ]);
         $q=DB::table('school_new')
             ->select('id','school_name as name','school_code','country','state','district','city')
-            ->where('school_status','Active')
-            ->whereNotExists(function($sub){
+            ->where('school_status','Active');
+        if (\Illuminate\Support\Facades\Schema::hasTable('schools')) {
+            $q->whereNotExists(function($sub){
                 $sub->selectRaw('1')->from('schools')
                     ->whereColumn('schools.school_code','school_new.school_code');
             });
-        if(!empty($d['country_id'])) $q->where('country',$d['country_id']);
-        if(!empty($d['state_id'])){
-            $state=DB::table('states')->where('state_subdivision_id',$d['state_id'])->value('state_subdivision_name');
-            if(!$state) return response()->json([]);
-            $q->where('state',$state);
         }
-        // if(!empty($d['district_id'])){
-        //     $district=DB::table('districts')->where('id',$d['district_id'])->value('district_name');
-        //     if(!$district) return response()->json([]);
-        //     $q->where('district',$district);
-        // }
+        if(!empty($d['country_id'])) $q->where('country', $d['country_id']);
+        if(!empty($d['state_id'])) $q->where('state', (string) $d['state_id']);
+        if(!empty($d['district_id'])) {
+            if (!\Illuminate\Support\Facades\Schema::hasTable('districts')) {
+                return response()->json([]);
+            }
+            $district = DB::table('districts')->where('id', $d['district_id'])->value('district_name');
+            if(!$district) return response()->json([]);
+            $q->where('district', $district);
+        }
         if(!empty($d['q'])){
             $term=trim($d['q']);
             $q->where(function($x) use ($term){

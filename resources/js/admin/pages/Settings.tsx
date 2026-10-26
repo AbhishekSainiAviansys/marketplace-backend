@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, ImageUp, Loader2, Save, Send, Trash2 } from 'lucide-react'
 import { api, apiOrigin, errMsg } from '@lib/api'
-import { assetUrl, useBrand } from '@lib/brand'
+import { assetUrl, useBrand, useBrandRefresh } from '@lib/brand'
 
 type Row = { key: string; value: string; group: string; is_secret: number | boolean }
+type Cred = { id: number; title: string; public?: string | null; private?: string | null; api?: string | null; desc?: string | null; status: string }
 
 const GROUPS: Record<string, { label: string; blurb: string }> = {
   branding: { label: 'Branding', blurb: 'Shown in the sidebar and on every login page.' },
@@ -20,23 +21,42 @@ export function Settings() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadingIcon, setUploadingIcon] = useState(false)
+  const [cred, setCred] = useState<Cred | null>(null)
+  const [credForm, setCredForm] = useState({ public: '', private: '', api: '', status: 'Active' })
+  const [credBusy, setCredBusy] = useState(false)
   const [mail, setMail] = useState('test@gmail.com')
   const fileRef = useRef<HTMLInputElement>(null)
+  const iconRef = useRef<HTMLInputElement>(null)
   const { appName } = useBrand()
+  const refreshBrand = useBrandRefresh()
 
   const load = async () => {
     const { data } = await api.get<Row[]>('/admin/settings')
     // home_*/site_* keys are structured JSON owned by dedicated pages
     // (Home content, Pages & Footer) — hidden here so nobody edits raw JSON.
-    const visible = data.filter((x) => !x.key.startsWith('home_') && !['site_pages', 'contact_info', 'social_links'].includes(x.key))
+    // razorpay_* keys are managed in the credentials table section below.
+    const visible = data.filter((x) => !x.key.startsWith('home_') && !['site_pages', 'contact_info', 'social_links'].includes(x.key) && !x.key.startsWith('razorpay_'))
     setRows(visible)
     const o: Record<string, string> = {}
     visible.forEach((x) => (o[x.key] = x.is_secret ? '' : (x.value ?? '')))
     setForm(o)
   }
 
+  const loadCred = async () => {
+    try {
+      const { data } = await api.get<Cred[]>('/admin/credentials')
+      const r = data.find((x) => /razorpay/i.test(x.title)) || null
+      setCred(r)
+      if (r) setCredForm({ public: r.public ?? '', private: '', api: '', status: r.status ?? 'Active' })
+    } catch {
+      // ignore; credentials table may be unavailable
+    }
+  }
+
   useEffect(() => {
     load().catch(() => setMsg({ kind: 'err', text: 'API offline – is Laravel running on :8001?' }))
+    loadCred().catch(() => {})
   }, [])
 
   const save = async (e: React.FormEvent) => {
@@ -52,10 +72,36 @@ export function Settings() {
       await api.put('/admin/settings', { settings: clean })
       setMsg({ kind: 'ok', text: 'Settings saved' })
       await load()
+      await refreshBrand()
     } catch (e) {
       setMsg({ kind: 'err', text: errMsg(e, 'Save failed') })
     } finally {
       setBusy(false)
+    }
+  }
+
+  const saveCred = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setMsg(null)
+    setCredBusy(true)
+    try {
+      const payload = {
+        public: credForm.public,
+        private: credForm.private,
+        api: credForm.api,
+        status: credForm.status,
+      }
+      if (cred) {
+        await api.put(`/admin/credentials/${cred.id}`, payload)
+      } else {
+        await api.post('/admin/credentials', { title: 'Razorpay', ...payload })
+      }
+      setMsg({ kind: 'ok', text: 'Payment credentials saved' })
+      await loadCred()
+    } catch (e) {
+      setMsg({ kind: 'err', text: errMsg(e, 'Save failed') })
+    } finally {
+      setCredBusy(false)
     }
   }
 
@@ -70,6 +116,8 @@ export function Settings() {
       await api.put('/admin/settings', { settings: { branding_logo: data.url } })
       setMsg({ kind: 'ok', text: 'Logo uploaded — it now appears on all three panels' })
       await load()
+      await refreshBrand()
+
     } catch (e) {
       setMsg({ kind: 'err', text: errMsg(e, 'Logo upload failed') })
     } finally {
@@ -84,10 +132,45 @@ export function Settings() {
       await api.put('/admin/settings', { settings: { branding_logo: '' } })
       setMsg({ kind: 'ok', text: 'Logo removed' })
       await load()
+      await refreshBrand()
+
     } catch (e) {
       setMsg({ kind: 'err', text: errMsg(e, 'Could not remove logo') })
     }
   }
+
+  const uploadIcon = async (file: File) => {
+    setUploadingIcon(true)
+    setMsg(null)
+    try {
+      const fd = new FormData()
+      fd.append('image', file)
+      fd.append('folder', 'branding')
+      const { data } = await api.post('/upload/image', fd)
+      await api.put('/admin/settings', { settings: { branding_icon: data.url } })
+      setMsg({ kind: 'ok', text: 'Icon uploaded — it now appears as the site icon and sidebar minimise logo' })
+      await load()
+      await refreshBrand()
+    } catch (e) {
+      setMsg({ kind: 'err', text: errMsg(e, 'Icon upload failed') })
+    } finally {
+      setUploadingIcon(false)
+      if (iconRef.current) iconRef.current.value = ''
+    }
+  }
+
+  const removeIcon = async () => {
+    setMsg(null)
+    try {
+      await api.put('/admin/settings', { settings: { branding_icon: '' } })
+      setMsg({ kind: 'ok', text: 'Icon removed' })
+      await load()
+      await refreshBrand()
+    } catch (e) {
+      setMsg({ kind: 'err', text: errMsg(e, 'Could not remove icon') })
+    }
+  }
+
 
   const testMail = async () => {
     setMsg(null)
@@ -100,7 +183,8 @@ export function Settings() {
   }
 
   const logo = assetUrl(form.branding_logo)
-  const EXPLICIT_KEYS = new Set(['branding_logo', 'app_name', 'brand_primary', 'brand_secondary', 'button_style'])
+  const icon = assetUrl(form.branding_icon)
+  const EXPLICIT_KEYS = new Set(['branding_logo', 'branding_icon', 'app_name', 'brand_primary', 'brand_secondary', 'button_style'])
   const grouped = Object.keys(GROUPS)
     .map((g) => [g, rows.filter((r) => (r.group || 'general') === g && !EXPLICIT_KEYS.has(r.key))] as const)
     .filter(([, list]) => list.length > 0)
@@ -166,6 +250,61 @@ return (
             )}
           </div>
         </div>
+
+        {/* Icon upload - small icon used as the browser tab icon and the sidebar minimise logo */}
+        <section className="card p-6">
+          <h3 className="text-base font-bold text-slate-900">Logo icon</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Small square icon (PNG/SVG). Used as the site title image (browser tab) and the sidebar minimise logo.
+          </p>
+
+          <div className="mt-5 flex flex-wrap items-center gap-5">
+            <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-2">
+              {icon ? (
+                <img src={icon} alt="Current icon" className="max-h-16 max-w-full object-contain" />
+              ) : (
+                <span className="text-center text-[10px] leading-tight font-semibold text-slate-400">
+                  Icon
+                  <br />
+                  <span className="font-normal">none</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <input
+                ref={iconRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void uploadIcon(f)
+                }}
+              />
+              <button
+                type="button"
+                disabled={uploadingIcon}
+                onClick={() => iconRef.current?.click()}
+                className="accent-bg inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
+              >
+                {uploadingIcon ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
+                {uploadingIcon ? 'Uploading…' : icon ? 'Replace icon' : 'Upload icon'}
+              </button>
+
+              {icon && (
+                <button
+                  type="button"
+                  onClick={removeIcon}
+                  className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-100"
+                >
+                  <Trash2 className="h-4 w-4" /> Remove
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+
 
         <div className="mt-5 grid gap-4 sm:grid-cols-2">
           <label className="block">
@@ -249,6 +388,68 @@ return (
         </div>
         <p className="mt-4 text-xs text-slate-500">Brand colour, secondary colour and button style apply to all panels. Press “Save settings” below.</p>
       </section>
+      <section className="card p-6">
+        <h3 className="text-base font-bold text-slate-900">Payment credentials (Razorpay)</h3>
+        <p className="mt-1 text-sm text-slate-500">
+          Stored in the <code>credentials</code> table. Used by checkout and webhook verification. Leave secrets blank to keep existing values.
+        </p>
+        <form onSubmit={saveCred} className="mt-5 space-y-4">
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Key ID</span>
+            <input
+              type="text"
+              value={credForm.public}
+              onChange={(e) => setCredForm({ ...credForm, public: e.target.value })}
+              placeholder={cred?.public ?? 'rzp_test_...'}
+              className="field focus:field-focus outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
+              Key Secret <span className="ml-2 text-xs font-normal text-slate-400">secret — leave blank to keep</span>
+            </span>
+            <input
+              type="password"
+              value={credForm.private}
+              onChange={(e) => setCredForm({ ...credForm, private: e.target.value })}
+              placeholder="••••••••"
+              className="field focus:field-focus outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">
+              Webhook Secret <span className="ml-2 text-xs font-normal text-slate-400">secret — leave blank to keep</span>
+            </span>
+            <input
+              type="password"
+              value={credForm.api}
+              onChange={(e) => setCredForm({ ...credForm, api: e.target.value })}
+              placeholder="••••••••"
+              className="field focus:field-focus outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-1.5 block text-sm font-medium text-slate-700">Status</span>
+            <select
+              value={credForm.status}
+              onChange={(e) => setCredForm({ ...credForm, status: e.target.value })}
+              className="field focus:field-focus outline-none"
+            >
+              <option value="Active">Active</option>
+              <option value="Inactive">Inactive</option>
+            </select>
+          </label>
+          <button
+            type="submit"
+            disabled={credBusy}
+            className="accent-bg inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:opacity-60"
+          >
+            {credBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            {credBusy ? 'Saving…' : 'Save payment credentials'}
+          </button>
+        </form>
+      </section>
+
       <form onSubmit={save} className="space-y-6">
         {grouped.map(([group, list]) => (
           <section key={group} className="card p-6">

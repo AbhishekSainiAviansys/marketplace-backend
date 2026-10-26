@@ -1,6 +1,6 @@
 <?php
 namespace App\Http\Controllers;
-use App\Models\{User,Vendor,School,Category,CategoryField,Product,ProductValue};
+use App\Models\{User,Vendor,School,Category,CategoryField,Product,ProductValue,ProductImage,SubCategory,ProductVariant};
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -356,19 +356,21 @@ class AdminController extends Controller {
     }
 
     public function catIndex(){
-        return Category::with('fields')->get();
+        return Category::with('fields','subCategories')->get();
     }
 
     public function catStore(Request $r){
-        $d=$r->validate(['name'=>'required','slug'=>'required|unique:categories']);
+        $d=$r->validate(['name'=>'required','slug'=>'required|unique:categories','description'=>'nullable','icon'=>'nullable','is_active'=>'boolean','is_size'=>'boolean','is_colour'=>'boolean']);
         $d['slug']=Str::slug($d['slug']);
         return Category::create($d);
     }
 
     public function catUpdate(Request $r,$id){
         $c=Category::findOrFail($id);
-        $c->update($r->only('name','description','is_active'));
-        return $c;
+        $c->update($r->only('name','description','icon','is_active','is_size','is_colour'));
+        if ($r->has('slug')) $c->slug = Str::slug($r->input('slug'));
+        $c->save();
+        return $c->load('fields','subCategories');
     }
 
     public function catDestroy($id){
@@ -376,7 +378,39 @@ class AdminController extends Controller {
         return response()->json(['deleted'=>true]);
     }
 
-    public function fieldStore(Request $r){
+    public function subCategoryIndex(Request $r){
+        $q = SubCategory::query();
+        if ($r->category_id) $q->where('category_id', $r->category_id);
+        return $q->orderBy('name')->get();
+    }
+
+    public function subCategoryStore(Request $r){
+        $d = $r->validate([
+            'category_id'=>'required|exists:categories,id',
+            'name'=>'required|string|max:120',
+            'slug'=>'required|string',
+            'description'=>'nullable|string',
+            'icon'=>'nullable|string',
+            'is_active'=>'boolean',
+        ]);
+        $d['slug'] = Str::slug($d['slug'] ?: $d['name']);
+        return SubCategory::create($d);
+    }
+
+    public function subCategoryUpdate(Request $r,$id){
+        $sc = SubCategory::findOrFail($id);
+        $sc->update($r->only('name','description','icon','is_active'));
+        if ($r->has('slug')) $sc->slug = Str::slug($r->input('slug'));
+        if ($r->has('category_id')) $sc->category_id = $r->input('category_id');
+        $sc->save();
+        return $sc;
+    }
+
+    public function subCategoryDestroy($id){
+        SubCategory::findOrFail($id)->delete();
+        return response()->json(['deleted'=>true]);
+    }
+
         $d=$r->validate(['category_id'=>'required|exists:categories,id','field_name'=>'required','field_label'=>'required','field_type'=>'required','is_required'=>'boolean']);
         return CategoryField::create($d);
     }
@@ -393,10 +427,14 @@ class AdminController extends Controller {
     }
 
     public function productIndex(Request $r){
-        $q=Product::with('category','values','images');
+        $q=Product::with('category','subCategory','values','images','variants');
         // ?search= powers the Home-content boost picker.
         if($r->search) $q->where('name','like','%'.$r->search.'%');
         return $q->paginate($r->per_page??20);
+    }
+
+    public function productShow($id){
+        return response()->json(Product::with('category','subCategory','values','images','variants')->findOrFail($id));
     }
 
     public function productStore(Request $r){
@@ -404,16 +442,62 @@ class AdminController extends Controller {
     }
 
     public function productUpdate(Request $r,$id){
-        $p=Product::findOrFail($id);
-        $p->update($r->only('price','mrp','stock','is_active','delivery_mode'));
-        return $p;
+        $p=Product::with('values','images')->findOrFail($id);
+
+        $allowed = ['category_id','sub_category_id','name','sku','price','mrp','stock','delivery_mode','delivery_charge','portal_charge','server_charge','payment_split','is_active','is_boost','boost_until'];
+        foreach ($allowed as $field) {
+            if ($r->has($field)) {
+                $p->{$field} = $r->input($field);
+            }
+        }
+        if ($r->has('boost_until') && ($r->input('boost_until') === '' || $r->input('boost_until') === null)) {
+            $p->boost_until = null;
+        }
+        if ($r->has('is_boost') && !$r->boolean('is_boost')) {
+            $p->boost_until = null;
+        }
+        $p->save();
+
+        if ($r->has('fields') && is_array($r->input('fields'))) {
+            ProductValue::where('product_id', $p->id)->delete();
+            foreach ($r->input('fields') as $fid => $val) {
+                ProductValue::create([
+                    'product_id' => $p->id,
+                    'field_id' => $fid,
+                    'value_text' => ($val === '' ? null : $val),
+                ]);
+            }
+        }
+
+        if ($r->has('images') && is_array($r->input('images'))) {
+            ProductImage::where('product_id', $p->id)->delete();
+            foreach (array_values($r->input('images')) as $i => $url) {
+                if (!empty($url)) {
+                    ProductImage::create([
+                        'product_id' => $p->id,
+                        'url' => $url,
+                        'is_primary' => $i === 0,
+                    ]);
+                }
+            }
+        }
+
+        return response()->json($p->fresh()->load('category','values','images'));
+    }
+
+    public function productDestroy($id){
+        Product::findOrFail($id)->delete();
+        return response()->json(['deleted' => true]);
     }
 
     private function saveProduct(Request $r, $type, $id){
-        $d=$r->validate(['category_id'=>'required|exists:categories,id','name'=>'required','price'=>'required|numeric','mrp'=>'nullable|numeric','stock'=>'integer','delivery_mode'=>'in:self,thirdparty,school_pickup','school_id'=>'nullable|exists:schools,id','vendor_id'=>'nullable|exists:vendors,id','fields'=>'array','payment_split'=>'array']);
+        $d=$r->validate(['category_id'=>'required|exists:categories,id','name'=>'required','sku'=>'nullable|string','price'=>'required|numeric','mrp'=>'nullable|numeric','stock'=>'integer','delivery_mode'=>'in:self,thirdparty,school_pickup','delivery_charge'=>'nullable|numeric','portal_charge'=>'nullable|numeric','server_charge'=>'nullable|numeric','school_id'=>'nullable|exists:schools,id','vendor_id'=>'nullable|exists:vendors,id','fields'=>'array','payment_split'=>'array','is_active'=>'boolean','is_boost'=>'boolean','boost_until'=>'nullable|date']);
         $p=Product::create($d+['created_by_type'=>$type,'created_by_id'=>$id]);
         foreach (($d['fields']??[]) as $fid=>$val) ProductValue::create(['product_id'=>$p->id,'field_id'=>$fid,'value_text'=>$val]);
-        return response()->json($p->load('values'),201);
+        foreach (($r->input('images') ?? []) as $i => $url) {
+            if (!empty($url)) ProductImage::create(['product_id'=>$p->id,'url'=>$url,'is_primary'=>$i===0]);
+        }
+        return response()->json($p->load('values','images'),201);
     }
 
     /** GET /admin/schools/stats - per-status counts for the school_new directory. */
@@ -426,4 +510,49 @@ class AdminController extends Controller {
             'deleted'  => $rows['Deleted'] ?? 0,
         ]);
     }
-}
+    public function orderLedger(\Illuminate\Http\Request $r)
+    {
+        return app(\App\Http\Controllers\OrderLedgerController::class)->index($r);
+    }
+
+    public function orders(\Illuminate\Http\Request $r)
+    {
+        return $this->orderLedger($r);
+    }    public function studentIndex(\Illuminate\Http\Request $r)
+    {
+        $q = \App\Models\User::query()->where('role', 'student');
+        if ($r->filled('search')) {
+            $s = (string) $r->input('search');
+            $q->where(function ($w) use ($s) {
+                $w->where('name', 'like', '%'.$s.'%')
+                  ->orWhere('email', 'like', '%'.$s.'%')
+                  ->orWhere('whatsapp', 'like', '%'.$s.'%');
+            });
+        }
+        $q->withCount('orders');
+        // Location filter against the addresses table (students store location in
+        // addresses rows, not in onboarding JSON).
+        foreach (['country_id','state_id','district_id'] as $p) {
+            if ($r->filled($p)) {
+                $v = $r->input($p);
+                $q->whereHas('addresses', function ($w) use ($p, $v) {
+                    $w->where($p, (string) $v)->orWhere($p, (int) $v);
+                });
+            }
+        }
+        $perPage = (int) $r->input('per_page', 15);
+        if (!in_array($perPage, [10,15,20,50,100], true)) $perPage = 15;
+        return $q->orderBy('id', 'desc')->paginate($perPage);
+    }
+
+    public function studentShow($id)
+    {
+        $u = \App\Models\User::where('role', 'student')->with('orders')->findOrFail($id);
+        return response()->json($u);
+    }
+
+    public function studentDestroy($id)
+    {
+        \App\Models\User::where('role', 'student')->findOrFail($id)->delete();
+        return response()->json(['success' => true]);
+    }}

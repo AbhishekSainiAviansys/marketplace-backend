@@ -1,7 +1,9 @@
 <?php
 namespace App\Http\Controllers;
+use App\Models\Credential;
 use App\Models\Setting;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class SettingController extends Controller {
     // GET /admin/settings – all (secrets masked unless ?show=1)
@@ -34,10 +36,13 @@ class SettingController extends Controller {
     // and the theme switch (solid vs gradient accent surfaces).
     public function public(){
         return response()->json([
-            'razorpay_key_id'=>Setting::getVal('razorpay_key_id'),
+            'razorpay_key_id' => Schema::hasTable('credentials')
+                ? (Credential::query()->active()->razorpay()->first()?->public)
+                : null,
             'payment_mode'=>Setting::getVal('payment_mode','test'),
             'app_name'=>Setting::getVal('app_name',config('app.name')),
             'branding_logo'=>Setting::getVal('branding_logo'),
+            'branding_icon'=>Setting::getVal('branding_icon'),
             'brand_primary'=>Setting::getVal('brand_primary'),
             'brand_secondary'=>Setting::getVal('brand_secondary'),
             'button_style'=>Setting::getVal('button_style','solid'),

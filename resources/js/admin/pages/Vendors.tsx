@@ -17,6 +17,9 @@ export function Vendors() {
   const [page, setPage] = useState(1)
   const [lastPage, setLastPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [perPage, setPerPage] = useState(20)
+  const [sortBy, setSortBy] = useState('created_at')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
   const [status, setStatus] = useState<'' | Status>('')
   const [q, setQ] = useState('')
   const [loc, setLoc] = useState<LocationFilter>(EMPTY_LOCATION_FILTER)
@@ -54,6 +57,9 @@ export function Vendors() {
           state_id: loc.stateId || undefined,
           district_id: loc.districtId || undefined,
           page,
+          per_page: perPage,
+          sort_by: sortBy,
+          sort_dir: sortDir,
         },
       })
       .then((r) => {
@@ -65,7 +71,7 @@ export function Vendors() {
       })
       .catch((e) => setErr(errMsg(e, 'Could not load vendors.')))
       .finally(() => setLoading(false))
-  }, [status, dq, loc, page])
+  }, [status, dq, loc, page, perPage, sortBy, sortDir])
 
   useEffect(() => { loadStats() }, [loadStats])
   useEffect(() => { load() }, [load])
@@ -180,7 +186,15 @@ export function Vendors() {
       </div>
 
       <VendorsTable rows={rows} loading={loading} err={err} status={status} page={page} lastPage={lastPage} total={total}
-        busyId={busyId} setPage={setPage} openProfile={openProfile}
+        perPage={perPage} sortBy={sortBy} sortDir={sortDir}
+        setPage={setPage}
+        onSort={(field) => {
+          if (sortBy === field) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+          else { setSortBy(field); setSortDir('asc') }
+          setPage(1)
+        }}
+        onPerPage={(n) => { setPerPage(n); setPage(1) }}
+        busyId={busyId} openProfile={openProfile}
         setReview={(row, action) => { setReview({ row, action }); setNotes('') }} setConfirmDelete={setConfirmDelete} />
 
       {profileId !== null && (

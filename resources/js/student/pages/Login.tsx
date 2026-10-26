@@ -13,7 +13,7 @@ export function Login() {
   const [err, setErr] = useState('')
   const nav = useNavigate()
   const [params] = useSearchParams()
-  const next = params.get('next') || '/'
+  const next = params.get('next') || '/profile'
   const { login: save } = useShop()
 
   const submit = async (e: React.FormEvent) => {
@@ -23,16 +23,20 @@ export function Login() {
       const { data } = await api.post('/auth/login', { login: login.trim(), password })
       const role = data?.user?.role
       if (role && role !== 'student') throw new Error(`This store is for student accounts (signed in as ${role}).`)
-      if (data?.token) localStorage.setItem('token', data.token)
-      if (data?.user) localStorage.setItem('user', JSON.stringify(data.user))
-      save({ name: data?.user?.name ?? login.trim(), className: '5', schoolCode: 'SCH001', whatsapp: login.trim() })
+      if (!data?.token || !data?.user) throw new Error('Login did not return a session token.')
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      save({
+        name: data.user.name ?? login.trim(),
+        className: data.user.class_name ?? '5',
+        schoolCode: data.user.school_code ?? 'SCH001',
+        whatsapp: data.user.whatsapp ?? login.trim(),
+        phoneCountryCode: data.user.phone_country_code,
+        email: data.user.email ?? (login.includes('@') ? login.trim() : undefined),
+      })
       nav(next, { replace: true })
-    } catch (e) {
-      // Offline / no student account yet → demo session so the UI flow is testable.
-      if (login.trim() && password.length >= 4) {
-        save({ name: login.includes('@') ? login.split('@')[0] : 'Demo Student', className: '5', schoolCode: 'SCH001', whatsapp: login.trim() })
-        nav(next, { replace: true })
-      } else setErr(errMsg(e, 'Login failed — use 4+ char password for demo mode'))
+    } catch (cause) {
+      setErr(errMsg(cause, 'Login failed.'))
     } finally { setBusy(false) }
   }
 
@@ -51,7 +55,7 @@ export function Login() {
               <input value={login} onChange={(e) => setLogin(e.target.value)} required placeholder="you@example.com" className="field pl-9 outline-none" />
             </div>
           </Field>
-          <Field label="Password" hint="Offline? Any 4+ character password opens a demo session.">
+          <Field label="Password" hint="Use the password you registered with.">
             <div className="relative">
               <Lock className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-[var(--text-subtle)]" />
               <input value={password} onChange={(e) => setPassword(e.target.value)} required type="password" placeholder="••••••••" className="field pl-9 outline-none" />

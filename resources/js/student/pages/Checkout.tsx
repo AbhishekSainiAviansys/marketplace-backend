@@ -1,20 +1,22 @@
 /** 4-step checkout: identity → address → payment → review → success. */
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Banknote, CheckCircle2, CreditCard, GraduationCap, MapPin, School, ShieldCheck, Truck } from 'lucide-react'
+import { CreditCard, CheckCircle2, GraduationCap, MapPin, School, ShieldCheck, Truck } from 'lucide-react'
 import { Alert, EmptyState, Field } from '@ui'
-import { deliveryLabel, rupee, useShop } from '../store/shop'
+import { cartShipping, deliveryLabel, rupee, useShop } from '../store/shop'
 
 export function Checkout() {
-  const { cartDetailed, subTotal, student, placeOrder } = useShop()
+  const { cartDetailed, subTotal, mrpTotal, student, placeOrder } = useShop()
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [identityOk, setIdentityOk] = useState(false)
   const [addr, setAddr] = useState({ name: student?.name ?? '', phone: student?.whatsapp ?? '', line: '', pin: '' })
   const [mode, setMode] = useState<'home' | 'pickup'>('pickup')
-  const [pay, setPay] = useState<'online' | 'cod'>('cod')
+  const [pay, setPay] = useState<'online'>('online')
   const [doneId, setDoneId] = useState('')
-  const ship = mode === 'home' ? (subTotal >= 999 ? 0 : 49) : 0
+  const [err, setErr] = useState('')
+  const hasStockIssue = cartDetailed.some(({ p, qty }) => p.stock <= 0 || qty > p.stock)
+  const ship = cartShipping(mode === 'pickup' ? 'pickup' : 'home', cartDetailed)
   const total = subTotal + ship
 
   if (cartDetailed.length === 0 && !doneId) {
@@ -27,10 +29,15 @@ export function Checkout() {
       <Link to="/login?next=/checkout" className="btn btn-primary mt-4">Login / Register</Link>
     </div>
   }
-  const place = () => {
-    const o = placeOrder({
+  const place = async () => {
+    if (hasStockIssue) {
+      setErr('Some items are out of stock or exceed available stock. Update your cart before placing the order.')
+      return
+    }
+    const o = await placeOrder({
       items: cartDetailed.map(({ p, qty }) => ({ id: p.id, name: p.name, price: p.price, qty, image: p.image })),
-      total, payMode: pay === 'cod' ? 'Cash on Delivery' : 'Online (Razorpay test)',
+      total, payMode: 'Online (Razorpay test)',
+
       delivery: mode === 'pickup' ? 'Pickup from school' : 'Home delivery',
       address: mode === 'pickup' ? `Pickup · ${student.schoolCode}` : `${addr.line}, ${addr.pin} · ${addr.phone}`,
     })
@@ -42,7 +49,7 @@ export function Checkout() {
       <div className="card mx-auto max-w-lg p-10 text-center">
         <CheckCircle2 className="mx-auto h-14 w-14 text-emerald-500" />
         <h1 className="mt-3 text-2xl font-bold text-[var(--text)]">Order placed!</h1>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">Order <b className="text-[var(--text)]">{doneId}</b> · {pay === 'cod' ? 'pay cash on delivery/pickup' : 'online payment (test mode)'}.</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">Order <b className="text-[var(--text)]">{doneId}</b> · online payment (test mode).</p>
         <div className="mt-5 flex justify-center gap-2">
           <Link to="/orders" className="btn btn-primary">View orders</Link>
           <Link to="/track" className="btn btn-secondary">Track order</Link>
@@ -103,10 +110,10 @@ export function Checkout() {
           <div className="mt-5 space-y-4">
             <div className="grid gap-2 sm:grid-cols-2">
               <button onClick={() => setMode('pickup')} className={`flex items-center gap-2 rounded-xl border p-3 text-left text-sm font-semibold ${mode === 'pickup' ? 'accent-ring border-transparent' : 'border-[var(--border)]'}`}>
-                <School className="h-5 w-5" /> Pickup from school <span className="badge badge-ok ml-auto">FREE</span>
+                <School className="h-5 w-5" /> Pickup from school <span className="badge badge-ok ml-auto">{ship === 0 ? 'FREE' : rupee(ship)}</span>
               </button>
               <button onClick={() => setMode('home')} className={`flex items-center gap-2 rounded-xl border p-3 text-left text-sm font-semibold ${mode === 'home' ? 'accent-ring border-transparent' : 'border-[var(--border)]'}`}>
-                <Truck className="h-5 w-5" /> Home delivery <span className="badge badge-neutral ml-auto">{subTotal >= 999 ? 'FREE' : '₹49'}</span>
+                <Truck className="h-5 w-5" /> Home delivery <span className="badge badge-neutral ml-auto">{ship === 0 ? 'FREE' : rupee(ship)}</span>
               </button>
             </div>
             {mode === 'home' && (
@@ -119,21 +126,22 @@ export function Checkout() {
                 <Field label="Address"><textarea value={addr.line} onChange={(e) => setAddr({ ...addr, line: e.target.value })} className="field outline-none" rows={2} placeholder="House, street, area…" /></Field>
               </>
             )}
-            {mode === 'pickup' && <Alert kind="info"><span className="flex gap-2"><MapPin className="h-4 w-4 shrink-0" /> Collect from your school office ({student.schoolCode}) — show the order ID. No delivery fee.</span></Alert>}
+            {mode === 'pickup' && <Alert kind="info"><span className="flex gap-2"><MapPin className="h-4 w-4 shrink-0" /> Collect from your school office ({student.schoolCode}) — show the order ID.{ship > 0 ? ` Delivery charge: ${rupee(ship)}.` : ' No delivery fee.'}</span></Alert>}
             <div className="flex gap-2">
               <button onClick={() => setStep(0)} className="btn btn-secondary flex-1">Back</button>
               <button onClick={() => setStep(2)} className="btn btn-primary flex-1 !py-3">Continue</button>
             </div>
           </div>
         )}
+        
         {step === 2 && (
           <div className="mt-5 space-y-3">
             <p className="text-sm font-bold text-[var(--text)]">Payment method</p>
             {[
-              { k: 'cod', t: 'Cash on Delivery / Pay at pickup', d: 'Pay cash or UPI when you receive the order.', icon: <Banknote className="h-5 w-5" /> },
-              { k: 'online', t: 'Pay online (Razorpay test)', d: 'UPI / card — test mode in v1, no real charge.', icon: <CreditCard className="h-5 w-5" /> },
+              // { k: 'cod', t: 'Cash on Delivery / Pay at pickup', d: 'Pay cash or UPI when you receive the order.', icon: <Banknote className="h-5 w-5" /> },
+              { k: 'online', t: 'Pay online', d: 'UPI / card — test mode in v1, no real charge.', icon: <CreditCard className="h-5 w-5" /> },
             ].map((o) => (
-              <button key={o.k} onClick={() => setPay(o.k as 'cod' | 'online')}
+              <button key={o.k} onClick={() => setPay('online')}
                 className={`flex w-full items-center gap-3 rounded-xl border p-4 text-left ${pay === o.k ? 'accent-ring border-transparent' : 'border-[var(--border)]'}`}>
                 {o.icon}
                 <span><span className="block text-sm font-bold text-[var(--text)]">{o.t}</span><span className="block text-xs text-[var(--text-muted)]">{o.d}</span></span>
@@ -154,18 +162,33 @@ export function Checkout() {
             {cartDetailed.map(({ p, qty }) => (
               <div key={p.id} className="flex items-center gap-3 rounded-xl bg-[var(--surface-2)] p-3">
                 <img src={p.image} alt="" className="h-12 w-14 rounded-lg object-cover" />
-                <p className="min-w-0 flex-1 truncate text-sm font-semibold text-[var(--text)]">{p.name} × {qty}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-[var(--text)]">{p.name} × {qty}</p>
+                  <p className="text-xs text-[var(--text-muted)]">
+                    {deliveryLabel[p.delivery]}
+                    {p.deliveryCharge != null ? ` · ${rupee(p.deliveryCharge)} delivery` : ''}
+                    {p.stock > 0 ? ` · In stock: ${p.stock}` : ' · Out of stock'}
+                  </p>
+                </div>
                 <b className="tnum text-sm text-[var(--text)]">{rupee(p.price * qty)}</b>
               </div>
             ))}
             <dl className="space-y-1 text-sm">
-              <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Subtotal</dt><dd className="tnum font-semibold">{rupee(subTotal)}</dd></div>
+              <div className="flex justify-between"><dt className="text-[var(--text-muted)]">MRP total</dt><dd className="tnum font-semibold">{rupee(mrpTotal)}</dd></div>
+              <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Discounted subtotal</dt><dd className="tnum font-semibold">{rupee(subTotal)}</dd></div>
+              <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Discount</dt><dd className="tnum font-semibold">{rupee(mrpTotal - subTotal)} ({mrpTotal > 0 ? Math.round(((mrpTotal - subTotal) / mrpTotal) * 100) : 0}%)</dd></div>
               <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery</dt><dd className="tnum font-semibold">{ship === 0 ? 'FREE' : rupee(ship)}</dd></div>
-              <div className="flex justify-between text-base font-bold"><dt>Total</dt><dd className="tnum">{rupee(total)}</dd></div>
+              <div className="flex justify-between text-base font-bold"><dt>Payable total</dt><dd className="tnum">{rupee(total)}</dd></div>
             </dl>
+            {hasStockIssue && (
+              <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+                Some items are out of stock or exceed available stock. Update your cart before placing the order.
+              </p>
+            )}
+            {err && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{err}</p>}
             <div className="flex gap-2">
               <button onClick={() => setStep(2)} className="btn btn-secondary flex-1">Back</button>
-              <button onClick={place} className="btn btn-primary flex-1 !py-3">Place order · {rupee(total)}</button>
+              <button onClick={place} className="btn btn-primary flex-1 !py-3" disabled={hasStockIssue}>Place order · {rupee(total)}</button>
             </div>
             <button onClick={() => nav('/cart')} className="w-full text-center text-xs text-[var(--text-muted)] hover:underline">Edit cart</button>
           </div>
@@ -173,7 +196,11 @@ export function Checkout() {
       </div>
       <aside className="card h-fit p-5">
         <h2 className="text-base font-bold">Summary</h2>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">{cartDetailed.length} item(s) · {mode === 'pickup' ? 'School pickup' : 'Home delivery'} · {pay === 'cod' ? 'COD' : 'Online'}</p>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">{cartDetailed.length} item(s) · {mode === 'pickup' ? 'School pickup' : 'Home delivery'} · Online</p>
+        <dl className="mt-3 space-y-1 text-sm">
+          <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Subtotal</dt><dd className="tnum font-semibold">{rupee(subTotal)}</dd></div>
+          <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery</dt><dd className="tnum font-semibold">{ship === 0 ? 'FREE' : rupee(ship)}</dd></div>
+        </dl>
         <p className="tnum mt-3 text-2xl font-bold">{rupee(total)}</p>
       </aside>
     </div>

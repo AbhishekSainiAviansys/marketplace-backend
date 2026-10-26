@@ -1,7 +1,7 @@
 /** Storefront chrome: utility bar, logo + search, dropdown category nav, footer + cart badge. */
 import { useState, type ReactNode } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router-dom'
-import { ChevronDown, Clock, Heart, LogOut, Mail, MapPin, Menu, Moon, Package, Phone, Search, ShoppingCart, Sun, Truck, X } from 'lucide-react'
+import { ChevronDown, Clock, Heart, LogOut, Mail, MapPin, Menu, Moon, Package, Phone, Search, ShoppingCart, Sun, Truck, User, X } from 'lucide-react'
 import { useBrand } from '@lib/brand'
 import { Logo, useTheme } from '@ui'
 import { useShop } from '../store/shop'
@@ -52,8 +52,8 @@ export function Shell({ children }: { children: ReactNode }) {
       {/* Utility strip (mitticool-style): fulfilment promises + account shortcuts. */}
       <div className="border-b border-[var(--border)] bg-[var(--surface-3)]/70">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-1.5 text-[11px] font-medium text-[var(--text-subtle)]">
-          <span className="flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Free pickup from school on most items</span>
-          <span className="hidden sm:inline">Pay online or Cash on Delivery — no hidden fees</span>
+          <span className="flex items-center gap-1.5"><Truck className="h-3.5 w-3.5" /> Pickup from school on most items</span>
+          <span className="hidden sm:inline">Pay online — no hidden fees</span>
           <span className="flex items-center gap-3">
             <Link to="/track" className="hover:text-[var(--text)]">Track order</Link>
             {student ? (
@@ -99,6 +99,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </Link>
             {student ? (
               <span className="ml-1 hidden items-center gap-2 sm:flex">
+                <Link to="/profile" className="btn btn-secondary !px-3 !py-2 text-xs"><User className="h-4 w-4" /> Profile</Link>
                 <Link to="/orders" className="btn btn-secondary !px-3 !py-2 text-xs"><Package className="h-4 w-4" />{student.name.split(' ')[0]}</Link>
                 <button className="btn btn-ghost btn-icon" onClick={logout} aria-label="Logout"><LogOut className="h-4 w-4" /></button>
               </span>
@@ -159,7 +160,7 @@ export function Shell({ children }: { children: ReactNode }) {
               </li>
             ))}
             <li className="ml-auto hidden items-center gap-1.5 text-xs text-[var(--text-subtle)] xl:flex">
-              <Truck className="h-3.5 w-3.5" /> Free pickup from school on most items
+              <Truck className="h-3.5 w-3.5" /> Pickup from school on most items
             </li>
           </ul>
         </nav>
@@ -195,7 +196,12 @@ export function Shell({ children }: { children: ReactNode }) {
                 <li key={it.to}><Link to={it.to} className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">{it.label}</Link></li>
               ))}
               <li><Link to="/shop?sort=off" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Top deals</Link></li>
-              <li><Link to="/sell" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Sell with us</Link></li>
+              {!student && (
+                <li><Link to="/sell" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Sell with us</Link></li>
+              )}
+              {student && (
+                <li><Link to="/profile" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">My Profile</Link></li>
+              )}
               <li><Link to="/directory" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Institute directory</Link></li>
             </ul>
           </div>

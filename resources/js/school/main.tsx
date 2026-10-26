@@ -10,8 +10,12 @@ import { createRoot } from 'react-dom/client'
 import '../index.css'
 import App from './App'
 
+import { ToastProvider } from '@ui'
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App basename="/school" />
+    <ToastProvider>
+      <App basename="/school" />
+    </ToastProvider>
   </StrictMode>,
 )

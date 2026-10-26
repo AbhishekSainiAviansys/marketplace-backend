@@ -13,8 +13,14 @@ use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\VendorOnboardingController;
 use App\Http\Controllers\SchoolOnboardingController;
 use App\Http\Controllers\CoachingController;
+use App\Http\Controllers\CredentialController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\OrderLedgerController;
+use App\Http\Controllers\StudentController;
+use App\Http\Controllers\CouponController;
 use App\Http\Controllers\DirectoryController;
 use App\Http\Controllers\EnquiryController;
+use App\Http\Controllers\InvoiceController;
 
 Route::get('health', fn()=>response()->json(['ok'=>true,'service'=>'marketplace-api']));
 
@@ -63,15 +69,35 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('admin')->middleware('role:admin')->group(function () {
             Route::get('dashboard', [AdminController::class, 'dashboard']);
+            Route::get('vendors/stats', [AdminController::class, 'vendorStats']);
             Route::apiResource('vendors', AdminController::class);
             // Amazon-style review: approve / reject with notes -> notifies vendor.
             Route::post('vendors/{id}/review', [AdminController::class, 'review']);
             Route::post('schools/{id}/review', [AdminController::class, 'schoolReview']);
+            Route::get('schools/stats', [AdminController::class, 'schoolStats']);
             Route::get('schools', [AdminController::class, 'schoolIndex']);
             Route::get('schools/{id}', [AdminController::class, 'schoolShow']);
             Route::post('schools', [AdminController::class, 'schoolStore']);
             Route::put('schools/{id}', [AdminController::class, 'schoolUpdate']);
             Route::delete('schools/{id}', [AdminController::class, 'schoolDestroy']);
+            // Coaching institutes (private coaching / private institute / private tutor)
+            Route::get('coaching/stats', [CoachingController::class, 'coachingStats']);
+            Route::get('coaching', [CoachingController::class, 'coachingIndex']);
+            Route::get('coaching/{id}', [CoachingController::class, 'coachingShow']);
+            Route::post('coaching', [CoachingController::class, 'coachingStore']);
+            Route::put('coaching/{id}', [CoachingController::class, 'coachingUpdate']);
+            Route::delete('coaching/{id}', [CoachingController::class, 'coachingDestroy']);
+            Route::post('coaching/{id}/review', [CoachingController::class, 'coachingReview']);
+            // route aliases
+            foreach (['coaching-institutes','coachings','institutes'] as $alias) {
+                Route::get($alias.'/stats', [CoachingController::class, 'coachingStats']);
+                Route::get($alias, [CoachingController::class, 'coachingIndex']);
+                Route::get($alias.'/{id}', [CoachingController::class, 'coachingShow']);
+                Route::post($alias, [CoachingController::class, 'coachingStore']);
+                Route::put($alias.'/{id}', [CoachingController::class, 'coachingUpdate']);
+                Route::delete($alias.'/{id}', [CoachingController::class, 'coachingDestroy']);
+                Route::post($alias.'/{id}/review', [CoachingController::class, 'coachingReview']);
+            }
             Route::post('school-vendor-assign', [AdminController::class, 'assign']);
             Route::get('categories', [AdminController::class, 'catIndex']);
             Route::post('categories', [AdminController::class, 'catStore']);
@@ -81,11 +107,39 @@ Route::prefix('v1')->group(function () {
             Route::put('category-fields/{id}', [AdminController::class, 'fieldUpdate']);
             Route::delete('category-fields/{id}', [AdminController::class, 'fieldDestroy']);
             Route::get('products', [AdminController::class, 'productIndex']);
+            Route::get('products/{id}', [AdminController::class, 'productShow']);
             Route::post('products', [AdminController::class, 'productStore']);
             Route::put('products/{id}', [AdminController::class, 'productUpdate']);
+            Route::delete('products/{id}', [AdminController::class, 'productDestroy']);
+            Route::get('coupons', [CouponController::class, 'index']);
+            Route::post('coupons', [CouponController::class, 'store']);
+            Route::put('coupons/{id}', [CouponController::class, 'update']);
+            Route::delete('coupons/{id}', [CouponController::class, 'destroy']);
+            Route::get('students', [AdminController::class, 'studentIndex']);
+            Route::get('students/{id}', [AdminController::class, 'studentShow']);
+            Route::delete('students/{id}', [AdminController::class, 'studentDestroy']);
             Route::get('settings', [SettingController::class, 'index']);
             Route::put('settings', [SettingController::class, 'update']);
             Route::post('settings/test-mail', [SettingController::class, 'testMail']);
+            Route::get('credentials', [CredentialController::class, 'index']);
+            Route::post('credentials', [CredentialController::class, 'store']);
+            Route::put('credentials/razorpay', [CredentialController::class, 'upsertRazorpay']);
+            Route::put('credentials/{id}', [CredentialController::class, 'update']);
+            Route::get('orders', [OrderLedgerController::class, 'index']);
+            Route::get('order-ledger', [OrderLedgerController::class, 'index']);
+            Route::get('ledger', [OrderLedgerController::class, 'index']);
+Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
+            Route::get('orders/{id}', [OrderLedgerController::class, 'show']);
+            Route::patch('orders/{id}', [OrderLedgerController::class, 'update']);
+            Route::put('orders/{id}', [OrderLedgerController::class, 'update']);
+            Route::patch('orders/{id}/status', [OrderLedgerController::class, 'update']);
+            Route::put('orders/{id}/status', [OrderLedgerController::class, 'update']);
+            Route::patch('orders/{id}/tracking', [OrderLedgerController::class, 'update']);
+            Route::put('orders/{id}/tracking', [OrderLedgerController::class, 'update']);
+            Route::post('orders/{id}/cancel', [OrderLedgerController::class, 'cancel']);
+            Route::post('orders/{id}/refund', [OrderLedgerController::class, 'refund']);
+            Route::post('orders/{id}/mark-paid', [OrderLedgerController::class, 'markPaid']);
+            Route::post('orders/{id}/notify', [OrderLedgerController::class, 'sendNotification']);
             Route::post('notify', [AdminController::class, 'notify']);
         });
         Route::prefix('vendor')->middleware('role:vendor')->group(function () {
@@ -156,5 +210,45 @@ Route::prefix('v1')->group(function () {
                 Route::delete('branding/{type}', [SchoolController::class, 'brandingDestroy'])->where('type','logo|banner');
             });
         });
+    Route::prefix('student')->middleware('role:student')->group(function () {
+        Route::get('orders', [StudentController::class, 'orders']);
+        Route::get('profile', [StudentController::class, 'profile']);
+        Route::put('profile', [StudentController::class, 'profileUpdate']);
+        Route::patch('profile', [StudentController::class, 'profileUpdate']);
+        Route::post('profile', [StudentController::class, 'profileUpdate']);
+        Route::get('profile/update', [StudentController::class, 'profile']);
+        Route::put('profile/update', [StudentController::class, 'profileUpdate']);
+        Route::patch('profile/update', [StudentController::class, 'profileUpdate']);
+        Route::post('profile/update', [StudentController::class, 'profileUpdate']);
+        Route::get('profile/details', [StudentController::class, 'profile']);
+        Route::put('profile/details', [StudentController::class, 'profileUpdate']);
+        Route::patch('profile/details', [StudentController::class, 'profileUpdate']);
+        Route::post('profile/details', [StudentController::class, 'profileUpdate']);
+        Route::get('addresses', [AddressController::class, 'index']);
+        Route::post('addresses', [AddressController::class, 'store']);
+        Route::delete('addresses/{id}', [AddressController::class, 'destroy']);
+        Route::get('orders/{order}/invoice', [InvoiceController::class, 'student']);
+        Route::get('orders/{order}', [StudentController::class, 'orderShow']);
+        Route::post('orders', [StudentController::class, 'orderStore']);
+        Route::get('cart', [StudentController::class, 'cartIndex']);
+        Route::post('cart/items', [StudentController::class, 'cartAdd']);
+        Route::patch('cart/items/{product}', [StudentController::class, 'cartUpdate'])->where('product','[0-9]+');
+        Route::delete('cart/items/{product}', [StudentController::class, 'cartRemove'])->where('product','[0-9]+');
+        Route::delete('cart', [StudentController::class, 'cartClear']);
+        Route::post('coupons/validate', [StudentController::class, 'couponValidate']);
+        Route::get('wishlist', [StudentController::class, 'wishlistIndex']);
+        Route::post('wishlist/{product}', [StudentController::class, 'wishlistAdd'])->where('product','[0-9]+');
+        Route::delete('wishlist/{product}', [StudentController::class, 'wishlistRemove'])->where('product','[0-9]+');
+        Route::post('payments/razorpay/order', [PaymentController::class, 'createOrder']);
+        Route::post('payments/razorpay/verify', [PaymentController::class, 'verify']);
+
+        // Profile photo endpoints (multiple aliases for compatibility).
+        foreach (['profile/photo', 'profile/avatar', 'profile/picture', 'profile/image', 'profile/pic', 'avatar', 'photo', 'picture', 'image', 'profile-photo', 'profile_avatar'] as $uri) {
+            Route::post($uri, [StudentController::class, 'profilePhoto']);
+            Route::put($uri, [StudentController::class, 'profilePhoto']);
+            Route::patch($uri, [StudentController::class, 'profilePhoto']);
+            Route::delete($uri, [StudentController::class, 'profilePhotoDestroy']);
+        }
     });
+});
 });

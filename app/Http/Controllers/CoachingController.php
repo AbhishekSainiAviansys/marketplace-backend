@@ -59,4 +59,86 @@ use App\Models\InstituteCourse;use App\Models\TutorEducation;use App\Models\Inst
             'recent_enquiries'=>$recentEnquiries,
         ]);
     }
-    /** GET /coaching/insights/summary?month=YYYY-MM */    public function insightsSummary(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return response()->json($this->buildInsightsSummary($r,'coaching',$c->id));    }    /** GET /coaching/insights/views?date=YYYY-MM-DD */    public function insightsViews(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return $this->fetchInsightsViews($r,'coaching',$c->id);    }    /** GET /coaching/enquiries */    public function enquiries(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return $this->fetchInsightsEnquiries($r,'coaching',$c->id);    }}
+    /** GET /coaching/insights/summary?month=YYYY-MM */    public function insightsSummary(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return response()->json($this->buildInsightsSummary($r,'coaching',$c->id));    }    /** GET /coaching/insights/views?date=YYYY-MM-DD */    public function insightsViews(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return $this->fetchInsightsViews($r,'coaching',$c->id);    }    /** GET /coaching/enquiries */    public function enquiries(Request $r){        $c = $r->user()->coachingInstitute;        if(!$c) return response()->json(['message'=>'No coaching institute profile'],404);        return $this->fetchInsightsEnquiries($r,'coaching',$c->id);    }
+
+    /** GET /admin/coaching/stats - per-status counts for the list tabs. */
+    public function coachingStats(){
+        $rows = CoachingInstitute::selectRaw('onboarding_status, COUNT(*) c')->groupBy('onboarding_status')->pluck('c','onboarding_status');
+        return response()->json([
+            'total' => (int)CoachingInstitute::count(),
+            'approved' => (int)($rows['approved'] ?? 0),
+            'draft' => (int)($rows['draft'] ?? 0),
+            'rejected' => (int)($rows['rejected'] ?? 0),
+        ]);
+    }
+
+    /** GET /admin/coaching - paginated institute list with filters + sort. */
+    public function coachingIndex(Request $r){
+        $q = CoachingInstitute::with('user');
+        if($r->filled('search')){
+            $s = '%'.$r->string('search').'%';
+            $q->where(function($w) use($s){
+                $w->where('name','like',$s)->orWhere('institute_code','like',$s)->orWhere('address','like',$s);
+            });
+        }
+        if($r->filled('status')) $q->where('onboarding_status', $r->string('status'));
+        foreach(['country_id','state_id','district_id'] as $p){ if($r->filled($p)) $q->where($p, $r->integer($p)); }
+        $sortBy = in_array($r->sort_by, ['name','institute_code','onboarding_status','created_at'], true) ? $r->sort_by : 'created_at';
+        $sortDir = strtolower($r->sort_dir ?? 'desc') === 'asc' ? 'asc' : 'desc';
+        $perPage = (int) $r->input('per_page', 20);
+        if(!in_array($perPage, [10,15,20,50,100], true)) $perPage = 20;
+        return $q->orderBy($sortBy, $sortDir)->paginate($perPage);
+    }
+
+    /** GET /admin/coaching/{id} - single institute. */
+    public function coachingShow($id){
+        return CoachingInstitute::with('user')->findOrFail($id);
+    }
+
+    /** POST /admin/coaching - create institute. */
+    public function coachingStore(Request $r){
+        $d = $r->validate([
+            'name'=>'required|string|max:200',
+            'institute_type'=>'sometimes|in:private_coaching,private_institute,private_tutor',
+            'address'=>'nullable|string|max:500',
+            'country_id'=>'nullable|integer',
+            'state_id'=>'nullable|integer',
+            'district_id'=>'nullable|integer',
+        ]);
+        return CoachingInstitute::create($d);
+    }
+
+    /** PUT /admin/coaching/{id} - update institute. */
+    public function coachingUpdate(Request $r, $id){
+        $c = CoachingInstitute::findOrFail($id);
+        $d = $r->validate([
+            'name'=>'sometimes|string|max:200',
+            'institute_type'=>'sometimes|in:private_coaching,private_institute,private_tutor',
+            'address'=>'sometimes|nullable|string|max:500',
+            'country_id'=>'sometimes|nullable|integer',
+            'state_id'=>'sometimes|nullable|integer',
+            'district_id'=>'sometimes|nullable|integer',
+        ]);
+        $c->update($d);
+        return $c->fresh();
+    }
+
+    /** DELETE /admin/coaching/{id} - delete institute. */
+    public function coachingDestroy($id){
+        CoachingInstitute::findOrFail($id)->delete();
+        return response()->json(['success'=>true]);
+    }
+
+    /** POST /admin/coaching/{id}/review - approve/reject with notes. */
+    public function coachingReview(Request $r, $id){
+        $c = CoachingInstitute::findOrFail($id);
+        $d = $r->validate(['action'=>'required|in:approve,reject','notes'=>'nullable|string']);
+        $approved = $d['action']==='approve';
+        $c->update([
+            'onboarding_status'=>$approved?'approved':'rejected',
+            'reviewed_at'=>now(),
+            'review_notes'=>$approved?null:($d['notes']??'Please correct your application details.'),
+        ]);
+        return response()->json($c->fresh()->only(['id','name','institute_code','onboarding_status','reviewed_at','review_notes']));
+    }
+}
