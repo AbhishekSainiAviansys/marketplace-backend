@@ -7,6 +7,7 @@ import { EmptyState, Modal, PageHeader, Panel, Skeleton } from '@ui'
 type OrderItem = {
   id?: number | string
   product_id?: number | string
+  product_code?: number | string
   name?: string
   qty?: number
   quantity?: number
@@ -101,7 +102,7 @@ export function OrderDetail() {
       await api.patch(`/admin/orders/${order.id}`, {
         items: [
           {
-            id: item.id ?? item.product_id ?? selectedIdx,
+            id: item.product_code ?? item.id ?? item.product_id ?? selectedIdx,
             courier: formCourier || null,
             tracking_number: formTracking || null,
             tracking_url: formUrl || null,

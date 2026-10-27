@@ -19,7 +19,11 @@ export function Cart() {
   const gst = cartGst('home', cartDetailed)
   const couponAmount = couponCode ? couponDiscount : 0
   const payable = Math.max(0, cartTotal('home', cartDetailed) - couponAmount)
-  const hasStockIssue = cartDetailed.some(({ p, qty }) => p.stock <= 0 || qty > p.stock)
+  const hasStockIssue = cartDetailed.some(({ p, qty, color, size }) => {
+    const lineVariant = (color != null || size != null) ? (p.variants ?? []).find((x) => x.color === color && x.size === size) : undefined
+    const lineStock = lineVariant?.stock ?? p.stock
+    return lineStock <= 0 || qty > lineStock
+  })
 
   useEffect(() => { setCouponInput(couponCode ?? '') }, [couponCode])
   useEffect(() => {
@@ -52,38 +56,43 @@ export function Cart() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <div className="card divide-y divide-[var(--border)]">
-        {cartDetailed.map(({ p, qty }) => (
-          <div key={p.id} className="flex gap-3 p-4">
-            <Link to={`/product/${p.id}`}><img src={p.image} alt={p.name} className="h-20 w-24 rounded-xl border border-[var(--border)] object-cover" /></Link>
-            <div className="min-w-0 flex-1">
-              <Link to={`/product/${p.id}`} className="truncate text-sm font-bold text-[var(--text)] hover:underline">{p.name}</Link>
-              <p className="text-xs text-[var(--text-muted)]">{p.category} · Class {p.classTag}</p>
-              <p className="mt-1 text-xs text-[var(--text-subtle)]">
-                {deliveryLabel[p.delivery]}
-                {p.deliveryCharge != null ? ` · ${rupee(p.deliveryCharge)} delivery` : ''}
-              </p>
-              <p className={`mt-0.5 text-xs font-medium ${p.stock > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                {p.stock > 0 ? `In stock: ${p.stock}` : 'Out of stock'}
-                {qty > p.stock && p.stock > 0 ? ' · quantity exceeds stock' : ''}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <span className="flex items-center rounded-lg border border-[var(--border)]">
-                  <button className="btn btn-ghost btn-icon !p-1.5" onClick={() => setQty(p.id, qty - 1)} aria-label="less"><Minus className="h-3.5 w-3.5" /></button>
-                  <b className="tnum w-7 text-center text-sm text-[var(--text)]">{qty}</b>
-                  <button className="btn btn-ghost btn-icon !p-1.5" onClick={() => setQty(p.id, qty + 1)} aria-label="more" disabled={qty >= Math.min(9, p.stock)}><Plus className="h-3.5 w-3.5" /></button>
-                </span>
-                <button onClick={() => toggleWish(p.id)} className="btn btn-ghost !px-2 !py-1.5 text-xs">
-                  <Heart className={`h-3.5 w-3.5 ${wish.includes(p.id) ? 'fill-rose-500 text-rose-500' : ''}`} /> {wish.includes(p.id) ? 'Saved' : 'Wishlist'}
-                </button>
-                <button onClick={() => remove(p.id)} className="btn btn-ghost !px-2 !py-1.5 text-xs text-[var(--color-danger-600)]"><Trash2 className="h-3.5 w-3.5" /> Remove</button>
+        {cartDetailed.map(({ p, qty, color, size }) => {
+          const lineVariant = (color != null || size != null) ? (p.variants ?? []).find((x) => x.color === color && x.size === size) : undefined
+          const lineStock = lineVariant?.stock ?? p.stock
+          return (
+            <div key={`${p.id}::${color ?? '-'}::${size ?? '-'}`} className="flex gap-3 p-4">
+              <Link to={`/product/${p.id}`}><img src={p.image} alt={p.name} className="h-20 w-24 rounded-xl border border-[var(--border)] object-cover" /></Link>
+              <div className="min-w-0 flex-1">
+                <Link to={`/product/${p.id}`} className="truncate text-sm font-bold text-[var(--text)] hover:underline">{p.name}</Link>
+                {(color || size) ? <p className="text-[10px] text-[var(--text-muted)]">{color ?? ''}{size ? ' / ' + size : ''}</p> : null}
+                <p className="text-xs text-[var(--text-muted)]">{p.category} · Class {p.classTag}</p>
+                <p className="mt-1 text-xs text-[var(--text-subtle)]">
+                  {deliveryLabel[p.delivery]}
+                  {p.deliveryCharge != null ? ` · ${rupee(p.deliveryCharge)} delivery` : ''}
+                </p>
+                <p className={`mt-0.5 text-xs font-medium ${lineStock > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {lineStock > 0 ? `In stock: ${lineStock}` : 'Out of stock'}
+                  {qty > lineStock && lineStock > 0 ? ' · quantity exceeds stock' : ''}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="flex items-center rounded-lg border border-[var(--border)]">
+                    <button className="btn btn-ghost btn-icon !p-1.5" onClick={() => setQty(p.id, qty - 1, color, size)} aria-label="less"><Minus className="h-3.5 w-3.5" /></button>
+                    <b className="tnum w-7 text-center text-sm text-[var(--text)]">{qty}</b>
+                    <button className="btn btn-ghost btn-icon !p-1.5" onClick={() => setQty(p.id, qty + 1, color, size)} aria-label="more" disabled={qty >= Math.min(9, lineStock)}><Plus className="h-3.5 w-3.5" /></button>
+                  </span>
+                  <button onClick={() => toggleWish(p.id)} className="btn btn-ghost !px-2 !py-1.5 text-xs">
+                    <Heart className={`h-3.5 w-3.5 ${wish.includes(p.id) ? 'fill-rose-500 text-rose-500' : ''}`} /> {wish.includes(p.id) ? 'Saved' : 'Wishlist'}
+                  </button>
+                  <button onClick={() => remove(p.id, color, size)} className="btn btn-ghost !px-2 !py-1.5 text-xs text-[var(--color-danger-600)]"><Trash2 className="h-3.5 w-3.5" /> Remove</button>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="tnum text-sm font-bold text-[var(--text)]">{rupee(p.price * qty)}</p>
+                {p.mrp > p.price && <p className="tnum text-xs text-[var(--text-subtle)] line-through">{rupee(p.mrp * qty)}</p>}
               </div>
             </div>
-            <div className="text-right">
-              <p className="tnum text-sm font-bold text-[var(--text)]">{rupee(p.price * qty)}</p>
-              {p.mrp > p.price && <p className="tnum text-xs text-[var(--text-subtle)] line-through">{rupee(p.mrp * qty)}</p>}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
       <aside className="card h-fit p-5">
         <h2 className="text-base font-bold text-[var(--text)]">Order summary</h2>

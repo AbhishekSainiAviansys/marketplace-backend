@@ -43,8 +43,8 @@ class SitemapController extends Controller
         ];
 
         // Every active product has its own details page (/product/:id).
-        foreach (Product::where('is_active', 1)->orderBy('id', 'desc')->limit(2000)->pluck('id') as $id) {
-            $urls[] = "$host/product/$id";
+        foreach (Product::where('is_active', 1)->orderBy('id', 'desc')->limit(2000)->pluck('product_code') as $code) {
+            $urls[] = "$host/product/$code";
         }
 
         // Every approved institute has a directory detail page.

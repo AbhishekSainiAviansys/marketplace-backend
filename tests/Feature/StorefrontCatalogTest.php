@@ -46,7 +46,7 @@ class StorefrontCatalogTest extends TestCase
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id(); $t->unsignedBigInteger('category_id');
+            $t->id(); $t->string('product_code',32)->nullable()->unique(); $t->unsignedBigInteger('category_id');
             $t->string('created_by_type', 20); $t->unsignedBigInteger('created_by_id');
             $t->unsignedBigInteger('school_id')->nullable(); $t->unsignedBigInteger('vendor_id')->nullable();
             $t->string('name'); $t->string('sku', 60)->nullable()->unique();
@@ -117,7 +117,7 @@ class StorefrontCatalogTest extends TestCase
         $res->assertOk();
         // Bare array on purpose — the shared rowsOf() helper accepts it.
         $this->assertCount(1, $res->json());
-        $this->assertSame($a, $res->json('0.id'));
+        $this->assertSame('PRD'.str_pad((string) $a, 6, '0', STR_PAD_LEFT), $res->json('0.product_code'));
     }
 
     /** Category filter accepts the display name (student ?cat=Book Bundle). */

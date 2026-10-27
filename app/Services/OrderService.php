@@ -12,6 +12,15 @@ use Illuminate\Support\Facades\Schema;
 
 class OrderService
 {
+    private function findProduct($key, bool $lock = false): ?Product
+    {
+        if ($key === null || $key === '') return null;
+        $q = Product::query();
+        if ($lock) $q->lockForUpdate();
+        if (is_numeric($key)) return $q->find($key);
+        return $q->where('product_code', (string) $key)->first();
+    }
+
     /**
      * Create an order transactionally: validate + decrement stock, persist the
      * order (with optional payment metadata), and clear the user's cart.
@@ -26,9 +35,24 @@ class OrderService
         $adminProductNames = [];
 
         $order = DB::transaction(function () use ($u, $data, $payment, &$notifyAdmin, &$adminProductNames) {
+            // Normalize item identifiers to product_code and drop internal ids.
+            $normalized = [];
             foreach ($data['items'] as $it) {
-                if (empty($it['id'])) continue;
-                $product = Product::lockForUpdate()->find($it['id']);
+                $key = $it['product_code'] ?? $it['product_id'] ?? $it['id'] ?? null;
+                $product = $this->findProduct($key);
+                if ($product) {
+                    $it['product_code'] = $product->product_code;
+                } elseif ($key !== null && empty($it['product_code'])) {
+                    $it['product_code'] = (string) $key;
+                }
+                unset($it['id'], $it['product_id']);
+                $normalized[] = $it;
+            }
+            $data['items'] = $normalized;
+
+            foreach ($data['items'] as $it) {
+                if (empty($it['product_code'])) continue;
+                $product = $this->findProduct($it['product_code'], true);
                 if (!$product || !$product->is_active) {
                     abort(422, 'A product in your cart is no longer available.');
                 }
@@ -50,8 +74,8 @@ class OrderService
             foreach ($data['items'] as $it) {
                 $qty = max(1, (int) ($it['qty'] ?? 1));
                 $price = (float) ($it['price'] ?? 0);
-                if (empty($it['price']) && !empty($it['id'])) {
-                    $product = Product::find($it['id']);
+                if (empty($it['price']) && !empty($it['product_code'])) {
+                    $product = $this->findProduct($it['product_code']);
                     if ($product) $price = (float) $product->price;
                 }
                 $subtotal += $qty * $price;
@@ -64,8 +88,8 @@ class OrderService
                 $productDelivery = 0.0;
                 $hasExplicit = false;
                 foreach ($data['items'] as $it) {
-                    if (!empty($it['id'])) {
-                        $product = Product::find($it['id']);
+                    if (!empty($it['product_code'])) {
+                        $product = $this->findProduct($it['product_code']);
                         if ($product && $product->delivery_charge !== null) {
                             $hasExplicit = true;
                             $productDelivery += (float) $product->delivery_charge * max(1, (int) ($it['qty'] ?? 1));
@@ -81,8 +105,8 @@ class OrderService
                 $productDelivery = 0.0;
                 $hasExplicit = false;
                 foreach ($data['items'] as $it) {
-                    if (!empty($it['id'])) {
-                        $product = Product::find($it['id']);
+                    if (!empty($it['product_code'])) {
+                        $product = $this->findProduct($it['product_code']);
                         if ($product && $product->delivery_charge !== null) {
                             $hasExplicit = true;
                             $productDelivery += (float) $product->delivery_charge * max(1, (int) ($it['qty'] ?? 1));

@@ -1,6 +1,6 @@
 ﻿/** Student -> My Profile page. Shows profile details, addresses and recent orders. */
 import { useEffect, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { User2, Mail, Phone, MapPin, Package, ArrowLeft, Camera, Pencil, X } from 'lucide-react'
 import { api, errMsg } from '@lib/api'
 import { assetUrl, initials } from '@lib/brand'
@@ -40,6 +40,7 @@ type Order = {
 }
 
 export function Profile() {
+  const nav = useNavigate()
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
@@ -160,7 +161,7 @@ export function Profile() {
       <div className="card mx-auto max-w-2xl p-10 text-center">
         <h2 className="text-lg font-bold text-slate-900">Error</h2>
         <p className="mt-2 text-sm text-red-600">{err}</p>
-        <div className="mt-6"><Link to="/" className="btn btn-secondary !py-2 !px-4">Back to shop</Link></div>
+        <div className="mt-6"><button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-secondary !py-2 !px-4">Back to shop</button></div>
       </div>
     )
   }
@@ -173,9 +174,7 @@ export function Profile() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <Link to="/" className="btn btn-ghost btn-icon" aria-label="Back to shop">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
+        <button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-ghost btn-icon" aria-label="Back to shop"><ArrowLeft className="h-4 w-4" /></button>
         <h2 className="text-lg font-bold text-slate-900">My Profile</h2>
       </div>
 
@@ -368,4 +367,6 @@ export function Profile() {
     </div>
   )
 }
+
+
 

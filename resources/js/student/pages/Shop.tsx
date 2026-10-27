@@ -12,7 +12,7 @@ import { usePageSeo } from '../lib/seo'
 
 export function Shop() {
   const { live, loading, loadingMore, hasMore, fetchMore, student } = useShop()
-  const { cat, setCat, sort, setSort, q, setQ, rows } = useCatalogue()
+  const { cat, setCat, sub, setSub, sort, setSort, q, setQ, rows } = useCatalogue()
   const sentinelRef = useRef<HTMLDivElement>(null)
 
   usePageSeo({
@@ -28,12 +28,12 @@ export function Shop() {
     const el = sentinelRef.current
     if (!el || !hasMore) return
     const io = new IntersectionObserver(
-      (entries) => { if (entries.some((e) => e.isIntersecting)) fetchMore() },
+      (entries) => { if (entries.some((e) => e.isIntersecting)) fetchMore({ category: cat === 'All' ? undefined : cat, sub: sub || undefined, search: q || undefined }) },
       { rootMargin: '400px 0px' },
     )
     io.observe(el)
     return () => io.disconnect()
-  }, [hasMore, loadingMore, fetchMore])
+  }, [hasMore, loadingMore, fetchMore, cat, sub, q])
 
   return (
     <div className="space-y-6">
@@ -48,7 +48,7 @@ export function Shop() {
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[240px_1fr]">
-        <CatalogueRail cat={cat} setCat={setCat} sort={sort} setSort={setSort} q={q} setQ={setQ} />
+        <CatalogueRail cat={cat} setCat={setCat} sub={sub} setSub={setSub} sort={sort} setSort={setSort} q={q} setQ={setQ} />
         <section className="min-w-0 space-y-4">
           {!live && !loading && (
             <Alert kind="info">Showing demo products — add products from the Admin or Vendor panel and they appear here live.</Alert>

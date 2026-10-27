@@ -6,4 +6,8 @@ class ProductVariant extends Model {
     protected $fillable = ['product_id','size','color','sku','price','stock'];
     protected $casts = ['price'=>'decimal:2','stock'=>'integer'];
     public function product(){ return $this->belongsTo(Product::class); }
+    public function productStocks(){ return $this->hasMany(ProductStock::class, 'variant_id'); }
+    public function stocks(){ return $this->hasMany(ProductStock::class, 'variant_id'); }
 }
+
+

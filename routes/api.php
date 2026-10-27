@@ -46,6 +46,11 @@ Route::prefix('v1')->group(function () {
     // a 401 which tripped the shared interceptor's redirect-to-login). Only
     // is_active rows ever leave this endpoint.
     Route::get('products', [CommonController::class, 'products']);
+    Route::get('products/{id}', [CommonController::class, 'productShow'])->where('id', '[A-Za-z0-9\-]+');
+
+    // Public storefront categories (with active sub-categories) so the logged-out
+    // shop can render hover menus. Read-only; mutations stay admin-guarded.
+    Route::get('categories', [CommonController::class, 'categories']);
 
     // Public institution directory (country / state / district / type filters).
     // Deliberately unauthenticated - students browse it logged-out, same as the
@@ -57,7 +62,6 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('auth/me', [AuthController::class, 'me']);
-        Route::get('categories', [CommonController::class, 'categories']);
         Route::get('categories/{id}/fields', [CommonController::class, 'fields']);
         Route::post('upload/image', [CommonController::class, 'upload']);
         Route::get('notifications', [NotificationController::class, 'index']);
@@ -103,6 +107,10 @@ Route::prefix('v1')->group(function () {
             Route::post('categories', [AdminController::class, 'catStore']);
             Route::put('categories/{id}', [AdminController::class, 'catUpdate']);
             Route::delete('categories/{id}', [AdminController::class, 'catDestroy']);
+            Route::get('sub-categories', [AdminController::class, 'subCategoryIndex']);
+            Route::post('sub-categories', [AdminController::class, 'subCategoryStore']);
+            Route::put('sub-categories/{id}', [AdminController::class, 'subCategoryUpdate']);
+            Route::delete('sub-categories/{id}', [AdminController::class, 'subCategoryDestroy']);
             Route::post('category-fields', [AdminController::class, 'fieldStore']);
             Route::put('category-fields/{id}', [AdminController::class, 'fieldUpdate']);
             Route::delete('category-fields/{id}', [AdminController::class, 'fieldDestroy']);
@@ -232,13 +240,13 @@ Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
         Route::post('orders', [StudentController::class, 'orderStore']);
         Route::get('cart', [StudentController::class, 'cartIndex']);
         Route::post('cart/items', [StudentController::class, 'cartAdd']);
-        Route::patch('cart/items/{product}', [StudentController::class, 'cartUpdate'])->where('product','[0-9]+');
-        Route::delete('cart/items/{product}', [StudentController::class, 'cartRemove'])->where('product','[0-9]+');
+        Route::patch('cart/items/{product}', [StudentController::class, 'cartUpdate'])->where('product','[A-Za-z0-9_-]+');
+        Route::delete('cart/items/{product}', [StudentController::class, 'cartRemove'])->where('product','[A-Za-z0-9_-]+');
         Route::delete('cart', [StudentController::class, 'cartClear']);
         Route::post('coupons/validate', [StudentController::class, 'couponValidate']);
         Route::get('wishlist', [StudentController::class, 'wishlistIndex']);
-        Route::post('wishlist/{product}', [StudentController::class, 'wishlistAdd'])->where('product','[0-9]+');
-        Route::delete('wishlist/{product}', [StudentController::class, 'wishlistRemove'])->where('product','[0-9]+');
+        Route::post('wishlist/{product}', [StudentController::class, 'wishlistAdd'])->where('product','[A-Za-z0-9_-]+');
+        Route::delete('wishlist/{product}', [StudentController::class, 'wishlistRemove'])->where('product','[A-Za-z0-9_-]+');
         Route::post('payments/razorpay/order', [PaymentController::class, 'createOrder']);
         Route::post('payments/razorpay/verify', [PaymentController::class, 'verify']);
 

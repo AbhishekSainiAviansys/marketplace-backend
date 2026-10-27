@@ -4,6 +4,7 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, errMsg, metaOf, rowsOf } from '@lib/api'
 import { DUMMY_PRODUCTS } from '../data/products'
+import { loadRazorpayScript, type RazorpayPaymentResponse } from '../lib/razorpay'
 import type { Product } from '../data/products'
 
 export type { Product }
@@ -23,9 +24,9 @@ const C_KEY = 'mp-cart'
 const W_KEY = 'mp-wishlist'
 const O_KEY = 'mp-orders'
 
-export type CartLine = { id: string; qty: number }
+export type CartLine = { id: string; qty: number; color?: string | null; size?: string | null }
 export type Order = {
-  id: string; items: { id: string; name: string; price: number; qty: number; image: string; courier?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; shippedAt?: string | null; deliveredAt?: string | null }[]
+  id: string; items: { id: string; name: string; price: number; qty: number; image: string; color?: string | null; size?: string | null; courier?: string | null; trackingNumber?: string | null; trackingUrl?: string | null; shippedAt?: string | null; deliveredAt?: string | null }[]
   total: number; payMode: string; delivery: string; address: string; date: string; status: string
   orderCode?: string
   couponCode?: string | null
@@ -50,14 +51,14 @@ const read = <T,>(k: string, fb: T): T => {
 type ShopCtx = {
   products: Product[]; live: boolean; loading: boolean
   /** Infinite scroll on the home grid: append the next catalogue page. */
-  loadingMore: boolean; hasMore: boolean; fetchMore: () => void
+  loadingMore: boolean; hasMore: boolean; fetchMore: (params?: { category?: string; sub?: string; search?: string }) => void
   /** Merge externally fetched rows (boost/random spotlight) into the catalogue. */
   mergeRows: (rows: Product[]) => void
   student: Student | null; login: (s: Student) => void; logout: () => void
-  cart: CartLine[]; add: (id: string, qty?: number) => void; setQty: (id: string, qty: number) => void
-  remove: (id: string) => void; clearCart: () => void
+  cart: CartLine[]; add: (id: string, qty?: number, color?: string | null, size?: string | null) => void; setQty: (id: string, qty: number, color?: string | null, size?: string | null) => void
+  remove: (id: string, color?: string | null, size?: string | null) => void; clearCart: () => void
   wish: string[]; toggleWish: (id: string) => void
-  cartDetailed: { p: Product; qty: number }[]; subTotal: number; mrpTotal: number; count: number
+  cartDetailed: { p: Product; qty: number; color?: string | null; size?: string | null }[]; subTotal: number; mrpTotal: number; count: number
   orders: Order[]; placeOrder: (o: Omit<Order, 'id' | 'date' | 'status'>) => Promise<Order>
   couponCode: string | null; couponDiscount: number; applyCoupon: (code: string, subtotal: number) => Promise<{ code: string; discount_amount: number }>; clearCoupon: () => void
 }
@@ -66,20 +67,42 @@ const Ctx = createContext<ShopCtx | null>(null)
 
 export const toProduct = (r: Record<string, unknown>, i: number): Product => {
   const cat = r.category as { name?: string } | undefined
+  const sub = r.subCategory as { name?: string } | undefined
   const images = r.images as { url?: string; path?: string }[] | undefined
+  const vals = r.values as { value?: unknown; field?: { name?: string } }[] | undefined
   const price = Number(r.price ?? 0)
+  const imageUrls = (images ?? []).map((im) => im.url ?? im.path ?? '').filter(Boolean)
+  const rawVariants = Array.isArray(r.variants) ? r.variants : undefined
+  const variants = rawVariants?.map((v: Record<string, unknown>) => ({
+    id: (v.id ?? v.variant_id) as string | number | undefined,
+    color: (v.color ?? v.colour ?? null) as string | null,
+    size: v.size as string | null,
+    stock: v.stock == null ? null : Number(v.stock ?? v.quantity ?? 0),
+    price: v.price == null ? null : Number(v.price ?? price),
+    sku: v.sku == null ? null : String(v.sku),
+  }))
+  const specs = vals && vals.length
+    ? vals.map((v) => ({ label: String((v.field as any)?.field_label ?? v.field?.name ?? 'Spec'), value: String(v.value ?? '') }))
+    : [{ label: 'Category', value: cat?.name ?? 'Book' }]
+  if (!specs.some((s) => s.label === 'Category')) specs.unshift({ label: 'Category', value: cat?.name ?? 'Book' })
   return {
-    id: String(r.id ?? `live-${i}`),
+    id: String(r.product_code ?? r.id ?? `live-${i}`),
+    dbId: Number.isFinite(Number(r.id)) ? Number(r.id) : undefined,
+    sku: r.sku == null ? null : String(r.sku),
+    brand: r.brand == null ? null : String(r.brand),
     name: String(r.name ?? 'Product'),
     category: cat?.name ?? 'Book',
+    subCategory: sub?.name ?? null,
     price, mrp: Number(r.mrp ?? price),
     rating: 4.5, reviews: 50 + ((i * 37) % 300), stock: Number(r.stock ?? 10),
-    image: images?.[0]?.url ?? DUMMY_PRODUCTS[i % DUMMY_PRODUCTS.length].image,
+    image: imageUrls[0] ?? DUMMY_PRODUCTS[i % DUMMY_PRODUCTS.length].image,
+    images: imageUrls.length ? imageUrls : undefined,
     delivery: (r.delivery_mode as Product['delivery']) ?? 'school_pickup',
     deliveryCharge: r.delivery_charge == null ? null : Number(r.delivery_charge),
     schoolCode: 'SCH001', classTag: 'All',
-    blurb: String(r.name ?? 'Product'),
-    specs: [{ label: 'Category', value: cat?.name ?? 'Book' }],
+    blurb: String(r.description ?? r.name ?? 'Product'),
+    specs,
+    variants,
   }
 }
 
@@ -87,7 +110,7 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
 const PAGE_SIZE = 12
 
 /** Admin-boosted "Featured picks" row (ids come from Home content settings). */
-export async function fetchBoosted(ids: number[]): Promise<Product[]> {
+export async function fetchBoosted(ids: (string | number)[]): Promise<Product[]> {
   if (ids.length === 0) return []
   const r = await api.get('/products', { params: { ids: ids.join(',') } })
   const rows = rowsOf<Record<string, unknown>>(r.data)
@@ -99,6 +122,11 @@ export async function fetchRandom(n: number): Promise<Product[]> {
   const r = await api.get('/products', { params: { random: 1, per_page: Math.max(1, n) } })
   const rows = rowsOf<Record<string, unknown>>(r.data)
   return rows.map(toProduct)
+}
+
+export async function fetchProduct(id: string | number): Promise<Product> {
+  const r = await api.get(`/products/${encodeURIComponent(String(id))}`)
+  return toProduct(r.data as Record<string, unknown>, 0)
 }
 
 export function ShopProvider({ children }: { children: ReactNode }) {
@@ -131,12 +159,12 @@ export function ShopProvider({ children }: { children: ReactNode }) {
   }, [])
 
   /** Append the next catalogue page — drives the home grid's infinite scroll. */
-  const fetchMore = async () => {
+  const fetchMore = async (params?: { category?: string; sub?: string; search?: string }) => {
     if (!liveRef.current || loadingMore || page >= lastPage) return
     setLoadingMore(true)
     try {
       const next = page + 1
-      const r = await api.get('/products', { params: { per_page: PAGE_SIZE, page: next } })
+      const r = await api.get('/products', { params: { per_page: PAGE_SIZE, page: next, category: params?.category, sub_category: params?.sub, search: params?.search } })
       const rows = rowsOf<Record<string, unknown>>(r.data?.data ?? r.data)
       setProducts((prev) => {
         const seen = new Set(prev.map((p) => p.id))
@@ -169,8 +197,8 @@ const loadCartFromBackend = async () => {
   if (!isAuthed()) return
   try {
     const r = await api.get('/student/cart')
-    const rows = rowsOf<{ product_id: string | number; qty: number }>(r.data)
-    setCart(rows.map((x) => ({ id: String(x.product_id), qty: Number(x.qty) })))
+    const rows = rowsOf<{ product_code?: string | number; product_id?: string | number; qty: number }>(r.data)
+    setCart(rows.map((x) => ({ id: String(x.product_code ?? x.product_id), qty: Number(x.qty) })))
   } catch { /* keep cached */ }
 }
 const loadWishlistFromBackend = async () => {
@@ -199,7 +227,7 @@ const loadOrdersFromBackend = async () => {
       id: String(row.order_code ?? row.id ?? ''),
       orderCode: row.order_code ? String(row.order_code) : undefined,
       items: Array.isArray(row.items) ? (row.items as Record<string, unknown>[]).map((it, i) => ({
-        id: String(it.id ?? it.product_id ?? i),
+        id: String(it.product_code ?? it.id ?? it.product_id ?? i),
         name: String(it.name ?? it.product_name ?? 'Item'),
         price: Number(it.price ?? 0),
         qty: Number(it.qty ?? it.quantity ?? 1),
@@ -254,7 +282,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
   }, [live, wish, cart, byId])
 
   const cartDetailed = useMemo(
-    () => cart.flatMap((l) => { const p = byId.get(l.id); return p ? [{ p, qty: l.qty }] : [] }),
+    () => cart.flatMap((l) => { const p = byId.get(l.id); return p ? [{ p, qty: l.qty, color: l.color, size: l.size }] : [] }),
     [cart, byId],
   )
   const subTotal = cartDetailed.reduce((s, l) => s + l.p.price * l.qty, 0)
@@ -274,7 +302,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         if (localCart.length) {
           await api.delete('/student/cart').catch(() => {})
           for (const l of localCart) {
-            await api.post('/student/cart/items', { product_id: Number(l.id), qty: l.qty }).catch(() => {})
+            await api.post('/student/cart/items', { product_code: l.id, qty: l.qty }).catch(() => {})
           }
           localStorage.removeItem(C_KEY)
         }
@@ -291,43 +319,58 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
     },
     logout: () => { localStorage.removeItem(S_KEY); localStorage.removeItem('token'); localStorage.removeItem('user'); setStudent(null); setCart([]); setWish([]); setOrders([]); setCouponCode(null); setCouponDiscount(0); try { localStorage.removeItem('mp-coupon') } catch {} },
     cart,
-    add: (id, qty = 1) => {
+    add: (id: string, qty = 1, color?: string | null, size?: string | null) => {
       if (!isAuthed()) {
         setCart((c) => {
           const p = byId.get(id)
-          const maxQty = p ? Math.min(9, Math.max(0, p.stock)) : 9
-          if (maxQty <= 0) return c
-          const f = c.find((l) => l.id === id)
-          if (f) return c.map((l) => (l.id === id ? { ...l, qty: Math.min(maxQty, l.qty + qty) } : l))
-          return [...c, { id, qty: Math.min(qty, maxQty) }]
+          let cap = p ? Math.max(0, p.stock) : 9
+          if (color != null || size != null) {
+            const v = (p?.variants ?? []).find((x) => x.color === color && x.size === size)
+            if (v && v.stock != null) cap = v.stock
+          }
+          cap = Math.min(9, cap)
+          if (cap <= 0) return c
+          const key = (l: CartLine) => l.id === id && l.color === color && l.size === size
+          const f = c.find(key)
+          if (f) return c.map((l) => (key(l) ? { ...l, qty: Math.min(cap, l.qty + qty) } : l))
+          return [...c, { id, qty: Math.min(qty, cap), color: color ?? null, size: size ?? null }]
         })
         return
       }
       void (async () => {
-        try { await api.post('/student/cart/items', { product_id: Number(id), qty }) } catch {}
+        try { await api.post('/student/cart/items', { product_code: id, qty, color, size }) } catch {}
         await loadCartFromBackend()
       })()
     },
-    setQty: (id, qty) => {
+    setQty: (id: string, qty: number, color?: string | null, size?: string | null) => {
       if (!isAuthed()) {
         setCart((c) => {
           const p = byId.get(id)
-          const maxQty = p ? Math.min(9, Math.max(0, p.stock)) : 9
-          if (qty <= 0 || maxQty <= 0) return c.filter((l) => l.id !== id)
-          return c.map((l) => (l.id === id ? { ...l, qty: Math.min(maxQty, qty) } : l))
+          let cap = p ? Math.max(0, p.stock) : 9
+          if (color != null || size != null) {
+            const v = (p?.variants ?? []).find((x) => x.color === color && x.size === size)
+            if (v && v.stock != null) cap = v.stock
+          }
+          cap = Math.min(9, cap)
+          const key = (l: CartLine) => l.id === id && l.color === color && l.size === size
+          if (qty <= 0 || cap <= 0) return c.filter((l) => !key(l))
+          return c.map((l) => (key(l) ? { ...l, qty: Math.min(cap, qty) } : l))
         })
         return
       }
       void (async () => {
         try {
           if (qty <= 0) await api.delete(`/student/cart/items/${id}`)
-          else await api.patch(`/student/cart/items/${id}`, { qty })
+          else await api.patch(`/student/cart/items/${id}`, { qty, color, size })
         } catch {}
         await loadCartFromBackend()
       })()
     },
-    remove: (id) => {
-      if (!isAuthed()) { setCart((c) => c.filter((l) => l.id !== id)); return }
+    remove: (id: string, color?: string | null, size?: string | null) => {
+      if (!isAuthed()) {
+        setCart((c) => c.filter((l) => !(l.id === id && l.color === color && l.size === size)))
+        return
+      }
       void (async () => {
         try { await api.delete(`/student/cart/items/${id}`) } catch {}
         await loadCartFromBackend()
@@ -377,21 +420,81 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
       const token = localStorage.getItem('token')
       let created: Record<string, unknown> | null = null
       if (token) {
-        const res = await api.post('/student/orders', {
-          items: o.items.map((it) => ({ id: Number(it.id), name: it.name, qty: it.qty, price: it.price, image: it.image })),
+        const missingLive = o.items.some((it) => !/^\d+$/.test(String(it.id)))
+        if (missingLive) {
+          throw new Error('Some cart items are not available for online payment. Please use products from the live catalogue.')
+        }
+
+        const createRes = await api.post('/student/payments/razorpay/order', {
+          amount: o.total,
+          currency: 'INR',
+          receipt: `rcpt_${Date.now()}`,
+        })
+        const { key_id, razorpay_order_id, amount, currency } = createRes.data as {
+          key_id: string
+          razorpay_order_id: string
+          amount: number
+          currency: string
+        }
+
+        await loadRazorpayScript()
+        const RazorpayCtor = window.Razorpay
+        if (!RazorpayCtor) throw new Error('Razorpay checkout failed to load.')
+
+        const payment = await new Promise<RazorpayPaymentResponse>((resolve, reject) => {
+          let settled = false
+          const rzp = new RazorpayCtor({
+            key: key_id,
+            amount,
+            currency,
+            order_id: razorpay_order_id,
+            name: 'Marketplace',
+            description: 'Test payment',
+            prefill: {
+              name: student?.name,
+              contact: student?.whatsapp,
+              email: student?.email,
+            },
+            theme: { color: '#2563eb' },
+            handler: (resp: any) => {
+              if (settled) return
+              settled = true
+              resolve({
+                razorpay_order_id: String(resp?.razorpay_order_id ?? razorpay_order_id),
+                razorpay_payment_id: String(resp?.razorpay_payment_id ?? ''),
+                razorpay_signature: String(resp?.razorpay_signature ?? ''),
+              })
+            },
+            modal: {
+              ondismiss: () => {
+                if (settled) return
+                settled = true
+                reject(new Error('Payment cancelled'))
+              },
+            },
+          })
+          try { rzp.on('payment.failed', (resp: any) => {
+            if (settled) return
+            settled = true
+            reject(new Error(resp?.error?.description || 'Payment failed'))
+          }) } catch {}
+          rzp.open()
+        })
+
+        const verifyRes = await api.post('/student/payments/razorpay/verify', {
+          razorpay_order_id: payment.razorpay_order_id,
+          razorpay_payment_id: payment.razorpay_payment_id,
+          razorpay_signature: payment.razorpay_signature,
+          items: o.items.map((it) => ({ id: it.id, name: it.name, qty: it.qty, price: it.price, image: it.image })),
           total: o.total,
           pay_mode: o.payMode,
           delivery: o.delivery,
           address: o.address,
-          status: 'Placed',
-          payment_status: 'paid',
           coupon_code: o.couponCode ?? couponCode ?? undefined,
         })
-        created = (res.data ?? null) as Record<string, unknown> | null
-        if (localStorage.getItem('token')) {
-          try { await api.delete('/student/cart') } catch {}
-          await loadCartFromBackend()
-        }
+        created = (verifyRes.data ?? null) as Record<string, unknown> | null
+        try { await api.delete('/student/cart') } catch {}
+        await loadCartFromBackend()
       }
       const order: Order = created ? {
         id: String(created.order_code ?? created.id ?? `ORD${Date.now().toString().slice(-6)}`),

@@ -104,7 +104,7 @@ function Shell() {
 else if (pathname === '/products') page = <Products />
   else if (pathname === '/schools/profile') page = <SchoolProfilePage />
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
-  else if (/^\/products\/\d+\/edit$/.test(pathname)) page = <ProductForm prefix={PREFIX} id={pathname.split('/')[2]} />
+  else if (/^\/products\/[A-Za-z0-9\-]+\/edit$/.test(pathname)) page = <ProductForm prefix={PREFIX} id={pathname.split('/')[2]} />
   else if (pathname === '/home-content') page = <HomeContent />
   else if (pathname === '/pages-footer') page = <SitePages />
   else if (pathname === '/settings') page = <Settings />

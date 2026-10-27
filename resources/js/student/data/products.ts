@@ -7,11 +7,15 @@ export type DeliveryMode = 'self' | 'thirdparty' | 'school_pickup'
 
 export type Product = {
   id: string
+  /** Numeric DB id for live catalogue rows; used for payment verification. */
+  dbId?: number
   name: string
   /** Optional commerce identifiers — present on live catalogue rows, absent on dummies. */
   sku?: string | null
   brand?: string | null
   category: string
+  subCategory?: string | null
+  images?: string[]
   price: number
   mrp: number
   rating: number
@@ -24,6 +28,15 @@ export type Product = {
   classTag: string
   blurb: string
   specs: { label: string; value: string }[]
+  /** Colour/size variants with per-variant stock (live catalogue rows only). */
+  variants?: Array<{
+    id?: string | number
+    color?: string | null
+    size?: string | null
+    stock?: number | null
+    price?: number | null
+    sku?: string | null
+  }>
 }
 
 export const CATEGORIES = ['All', 'Book', 'Book Bundle', 'Water Bottle', 'More'] as const

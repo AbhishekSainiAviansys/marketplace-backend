@@ -215,7 +215,7 @@ const DEFAULT: Content = {
   },
 }
 
-type PRow = { id: number; name: string; price: number; mrp?: number | null; images?: { url?: string }[]; category?: { name?: string } }
+type PRow = { id: string | number; name: string; price: number; mrp?: number | null; images?: { url?: string }[]; category?: { name?: string } }
 type Row = { key: string; value: string }
 
 const parseJson = <T,>(raw: string | undefined | null, fb: T): T => {
@@ -267,7 +267,7 @@ const MAX_BOOST = 8
 
 export function HomeContent() {
   const [content, setContent] = useState<Content>(DEFAULT)
-  const [boostIds, setBoostIds] = useState<number[]>([])
+  const [boostIds, setBoostIds] = useState<(string | number)[]>([])
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [q, setQ] = useState('')
@@ -281,8 +281,8 @@ export function HomeContent() {
     const home = data.find((x) => x.key === 'home_content')
     const boost = data.find((x) => x.key === 'home_boost_ids')
     setContent(mergeContent(parseJson<Partial<Content> | null>(home?.value, null)))
-    const ids = parseJson<number[]>(boost?.value, [])
-    setBoostIds(Array.isArray(ids) ? ids.map(Number).filter((n) => n > 0) : [])
+    const ids = parseJson<unknown[]>(boost?.value, [])
+    setBoostIds(Array.isArray(ids) ? ids.map((x) => String(x)).filter((x) => x !== '') : [])
     setLoaded(true)
   }
 
@@ -330,7 +330,7 @@ export function HomeContent() {
   const upd = (patch: Partial<Content>) => setContent((c) => ({ ...c, ...patch }))
   const toggleSection = (k: SectionKey) =>
     setContent((c) => ({ ...c, sections: { ...c.sections, [k]: !c.sections[k] } }))
-  const toggleBoost = (id: number) =>
+  const toggleBoost = (id: string | number) =>
     setBoostIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : ids.length >= MAX_BOOST ? ids : [...ids, id]))
   const moveSlide = (i: number, d: number) =>
     setContent((c) => {

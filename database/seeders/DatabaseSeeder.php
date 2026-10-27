@@ -5,6 +5,7 @@ use App\Models\{User,Category,CategoryField,Vendor,School};
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Database\Seeders\CoachingDemoSeeder;
+use Database\Seeders\ProductVariantSeeder;
 
 // Canonical demo seed: local-only demo logins. Production: run with --class=ProductionSeeder (no demo users).
 class DatabaseSeeder extends Seeder {
@@ -46,5 +47,8 @@ class DatabaseSeeder extends Seeder {
 
         // Coaching demo data: abhishektuitioncenter@gmail.com / Abhishek
         $this->call(CoachingDemoSeeder::class);
+
+        // Storefront colour/size variants for PRD000003 (Milton Water Bottle).
+        $this->call(ProductVariantSeeder::class);
     }
 }

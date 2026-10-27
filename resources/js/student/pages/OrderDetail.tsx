@@ -12,7 +12,7 @@ function mapOrder(row: Record<string, unknown>): Order {
     orderCode: row.order_code ? String(row.order_code) : undefined,
     items: Array.isArray(row.items)
       ? (row.items as Record<string, unknown>[]).map((it, i) => ({
-          id: String(it.id ?? it.product_id ?? i),
+          id: String(it.product_code ?? it.id ?? it.product_id ?? i),
           name: String(it.name ?? it.product_name ?? 'Item'),
           price: Number(it.price ?? 0),
           qty: Number(it.qty ?? it.quantity ?? 1),

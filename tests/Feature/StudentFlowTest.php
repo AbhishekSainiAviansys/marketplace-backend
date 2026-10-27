@@ -72,7 +72,7 @@ class StudentFlowTest extends TestCase {
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id();
+            $t->id(); $t->string('product_code',32)->nullable()->unique();
             $t->string('name', 150);
             $t->integer('stock')->default(0);
             $t->boolean('is_active')->default(true);
@@ -165,7 +165,7 @@ class StudentFlowTest extends TestCase {
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/cart')
             ->assertOk()
-            ->assertJsonFragment(['product_id'=>(string)$product->id, 'qty'=>2]);
+            ->assertJsonFragment(['product_code'=>(string)$product->product_code, 'qty'=>2]);
 
         $this->actingAs($student, 'sanctum')
             ->patchJson('/api/v1/student/cart/items/'.$product->id, ['qty'=>10])
@@ -177,7 +177,7 @@ class StudentFlowTest extends TestCase {
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/wishlist')
             ->assertOk()
-            ->assertJsonFragment([(string)$product->id]);
+            ->assertJsonFragment([(string)$product->product_code]);
 
         // checkout validates stock and decrements
         $this->actingAs($student, 'sanctum')

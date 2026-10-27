@@ -28,8 +28,8 @@ class SchoolController extends Controller {
         foreach ($imageUrls as $i=>$url) ProductImage::create(['product_id'=>$p->id,'url'=>$url,'is_primary'=>$i===0]);
         return response()->json($p->load('images'),201);
     }
-    public function update(Request $r,$id){ $this->mustIndependent($r); $p=Product::where('school_id',$r->user()->school->id)->findOrFail($id); $p->update($r->only('name','price','mrp','delivery_charge','portal_charge','server_charge','stock','is_active')); return $p; }
-    public function destroy(Request $r,$id){ $this->mustIndependent($r); Product::where('school_id',$r->user()->school->id)->findOrFail($id)->delete(); return response()->json(['deleted'=>true]); }
+    public function update(Request $r,$id){ $this->mustIndependent($r); $q=Product::where('school_id',$r->user()->school->id); $p=is_numeric($id)?$q->findOrFail($id):$q->where('product_code',$id)->firstOrFail(); $p->update($r->only('name','price','mrp','delivery_charge','portal_charge','server_charge','stock','is_active')); return $p; }
+    public function destroy(Request $r,$id){ $this->mustIndependent($r); $q=Product::where('school_id',$r->user()->school->id); $product=is_numeric($id)?$q->findOrFail($id):$q->where('product_code',$id)->firstOrFail(); $product->delete(); return response()->json(['deleted'=>true]); }
     private function mustIndependent(Request $r){ if(!$r->user()->school->is_independent) abort(response()->json(['message'=>'Only independent schools can add products'],403)); }
 
     /* -------------------------------------------------------------------

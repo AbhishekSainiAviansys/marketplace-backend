@@ -1,11 +1,12 @@
 /** Policy + contact pages — all copy admin-managed (Admin → Pages & Footer). */
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { Clock, Mail, MapPin, MessageCircle, Phone } from 'lucide-react'
 import { useSiteInfo, type PageKey } from '../store/siteInfo'
 
 function Page({ pageKey }: { pageKey: PageKey }) {
   const { pages } = useSiteInfo()
   const p = pages[pageKey]
+  const nav = useNavigate()
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div>
@@ -17,7 +18,7 @@ function Page({ pageKey }: { pageKey: PageKey }) {
           <p key={i} className="text-sm leading-relaxed text-[var(--text-muted)]">{para}</p>
         ))}
       </div>
-      <Link to="/shop" className="inline-block text-xs font-bold accent-text hover:underline">← Back to shop</Link>
+      <button onClick={() => (window.history.length > 1 ? nav(-1) : nav("/shop"))} className="inline-block text-xs font-bold accent-text hover:underline">← Back to shop</button>
     </div>
   )
 }
@@ -29,6 +30,7 @@ export const Terms = () => <Page pageKey="terms" />
 
 export function Contact() {
   const { contact, socials } = useSiteInfo()
+  const nav = useNavigate()
   const wa = socials.find((s) => s.network === 'WhatsApp')
   const rows = [
     contact.phone ? { icon: Phone, label: 'Phone', value: contact.phone, href: `tel:${contact.phone.replace(/\s/g, '')}` } : null,
@@ -73,7 +75,8 @@ export function Contact() {
           )}
         </div>
       </div>
-      <Link to="/shop" className="inline-block text-xs font-bold accent-text hover:underline">← Back to shop</Link>
+      <button onClick={() => (window.history.length > 1 ? nav(-1) : nav("/shop"))} className="inline-block text-xs font-bold accent-text hover:underline">← Back to shop</button>
     </div>
   )
 }
+

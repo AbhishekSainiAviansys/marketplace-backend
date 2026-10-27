@@ -57,7 +57,7 @@ class InvoiceDownloadTest extends TestCase
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id();
+            $t->id(); $t->string('product_code',32)->nullable()->unique();
             $t->string('name', 150);
             $t->integer('stock')->default(0);
             $t->boolean('is_active')->default(true);

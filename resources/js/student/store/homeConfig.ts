@@ -130,7 +130,7 @@ export type HomeConfig = {
   ticker: string[]
   banners: Banner[]
   random_count: number
-  boostIds: number[]
+  boostIds: (string | number)[]
 }
 
 export const DEFAULT_HOME: HomeConfig = {
@@ -169,7 +169,7 @@ const load = (): Promise<HomeConfig> => {
     .then((r) => {
       const c = (r.data?.home_content ?? {}) as Partial<HomeConfig>
       const rawIds: unknown = r.data?.home_boost_ids
-      const ids = Array.isArray(rawIds) ? rawIds.map(Number).filter((n) => n > 0) : []
+      const ids = Array.isArray(rawIds) ? rawIds.map((x) => String(x)).filter((x) => x !== '') : []
       cache = {
         ...DEFAULT_HOME,
         ...c,

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { CreditCard, CheckCircle2, GraduationCap, MapPin, School, ShieldCheck, Truck } from 'lucide-react'
 import { Alert, EmptyState, Field } from '@ui'
 import { cartShipping, deliveryLabel, rupee, useShop } from '../store/shop'
+import { errMsg } from '@lib/api'
 
 export function Checkout() {
   const { cartDetailed, subTotal, mrpTotal, student, placeOrder } = useShop()
@@ -15,12 +16,13 @@ export function Checkout() {
   const [pay, setPay] = useState<'online'>('online')
   const [doneId, setDoneId] = useState('')
   const [err, setErr] = useState('')
+  const [paying, setPaying] = useState(false)
   const hasStockIssue = cartDetailed.some(({ p, qty }) => p.stock <= 0 || qty > p.stock)
   const ship = cartShipping(mode === 'pickup' ? 'pickup' : 'home', cartDetailed)
   const total = subTotal + ship
 
   if (cartDetailed.length === 0 && !doneId) {
-    return <div className="card"><EmptyState title="Nothing to check out" hint="Your cart is empty." action={<Link to="/" className="btn btn-primary">Back to shop</Link>} /></div>
+    return <div className="card"><EmptyState title="Nothing to check out" hint="Your cart is empty." action={<button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-primary">Back to shop</button>} /></div>
   }
   if (!student) {
     return <div className="card p-10 text-center">
@@ -34,14 +36,22 @@ export function Checkout() {
       setErr('Some items are out of stock or exceed available stock. Update your cart before placing the order.')
       return
     }
-    const o = await placeOrder({
-      items: cartDetailed.map(({ p, qty }) => ({ id: p.id, name: p.name, price: p.price, qty, image: p.image })),
-      total, payMode: 'Online (Razorpay test)',
+    setErr('')
+    setPaying(true)
+    try {
+      const o = await placeOrder({
+        items: cartDetailed.map(({ p, qty, color, size }) => ({ id: p.dbId != null ? String(p.dbId) : p.id, name: p.name, price: p.price, qty, image: p.image, color, size })),
+        total, payMode: 'Online (Razorpay test)',
 
-      delivery: mode === 'pickup' ? 'Pickup from school' : 'Home delivery',
-      address: mode === 'pickup' ? `Pickup · ${student.schoolCode}` : `${addr.line}, ${addr.pin} · ${addr.phone}`,
-    })
-    setDoneId(o.id)
+        delivery: mode === 'pickup' ? 'Pickup from school' : 'Home delivery',
+        address: mode === 'pickup' ? `Pickup · ${student.schoolCode}` : `${addr.line}, ${addr.pin} · ${addr.phone}`,
+      })
+      setDoneId(o.id)
+    } catch (e) {
+      setErr(errMsg(e))
+    } finally {
+      setPaying(false)
+    }
   }
 
   if (doneId) {
@@ -159,7 +169,7 @@ export function Checkout() {
 
         {step === 3 && (
           <div className="mt-5 space-y-3">
-            {cartDetailed.map(({ p, qty }) => (
+            {cartDetailed.map(({ p, qty, color, size }) => (
               <div key={p.id} className="flex items-center gap-3 rounded-xl bg-[var(--surface-2)] p-3">
                 <img src={p.image} alt="" className="h-12 w-14 rounded-lg object-cover" />
                 <div className="min-w-0 flex-1">
@@ -168,6 +178,7 @@ export function Checkout() {
                     {deliveryLabel[p.delivery]}
                     {p.deliveryCharge != null ? ` · ${rupee(p.deliveryCharge)} delivery` : ''}
                     {p.stock > 0 ? ` · In stock: ${p.stock}` : ' · Out of stock'}
+                    {(color || size) ? ` · ${color ?? ''}${size ? ' / ' + size : ''}` : ''}
                   </p>
                 </div>
                 <b className="tnum text-sm text-[var(--text)]">{rupee(p.price * qty)}</b>
@@ -188,7 +199,7 @@ export function Checkout() {
             {err && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{err}</p>}
             <div className="flex gap-2">
               <button onClick={() => setStep(2)} className="btn btn-secondary flex-1">Back</button>
-              <button onClick={place} className="btn btn-primary flex-1 !py-3" disabled={hasStockIssue}>Place order · {rupee(total)}</button>
+              <button onClick={place} className="btn btn-primary flex-1 !py-3" disabled={hasStockIssue || paying}>{paying ? 'Processing payment…' : `Place order · ${rupee(total)}`}</button>
             </div>
             <button onClick={() => nav('/cart')} className="w-full text-center text-xs text-[var(--text-muted)] hover:underline">Edit cart</button>
           </div>

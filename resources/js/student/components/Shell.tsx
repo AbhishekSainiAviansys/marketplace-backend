@@ -4,6 +4,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { ChevronDown, Clock, Heart, LogOut, Mail, MapPin, Menu, Moon, Package, Phone, Search, ShoppingCart, Sun, Truck, User, X } from 'lucide-react'
 import { useBrand } from '@lib/brand'
 import { Logo, useTheme } from '@ui'
+import { useCategories } from '../store/categories'
 import { useShop } from '../store/shop'
 import { useHomeConfig } from '../store/homeConfig'
 import { PAGE_ROUTES, useSiteInfo } from '../store/siteInfo'
@@ -34,6 +35,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const { count, wish, student, logout } = useShop()
   const cfg = useHomeConfig()
   const site = useSiteInfo()
+  const { categories } = useCategories()
   const [q, setQ] = useState('')
   const [open, setOpen] = useState(false)
   const nav = useNavigate()
@@ -139,21 +141,52 @@ export function Shell({ children }: { children: ReactNode }) {
             {SHOP_MENUS.map((m) => (
               <li key={m.label} className="group relative">
                 {m.items ? (
-                  <>
-                    <button type="button" aria-haspopup="menu"
-                      className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
-                      {m.label} <ChevronDown className="h-3.5 w-3.5 transition group-hover:rotate-180" />
-                    </button>
-                    <div className="invisible absolute top-full left-0 z-50 w-60 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5 opacity-0 shadow-[var(--shadow-raised)] transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-                      {m.items.map((it) => (
-                        <Link key={it.to} to={it.to}
-                          className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
-                          {it.label}
-                          {it.hint && <span className="text-[11px] font-normal text-[var(--text-subtle)]">{it.hint}</span>}
+                  m.label === 'Shop' ? (
+                    <>
+                      <button type="button" aria-haspopup="menu"
+                        className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                        {m.label} <ChevronDown className="h-3.5 w-3.5 transition group-hover:rotate-180" />
+                      </button>
+                      <div className="invisible absolute top-full left-0 z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5 opacity-0 shadow-[var(--shadow-raised)] transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                        <Link to="/shop?cat=All" className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                          All products <span className="text-[11px] font-normal text-[var(--text-subtle)]">Everything</span>
                         </Link>
-                      ))}
-                    </div>
-                  </>
+                        {categories.map((c) => (
+                          <div key={c.id}>
+                            <Link to={`/shop?cat=${encodeURIComponent(c.name)}`}
+                              className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold text-[var(--text)] transition hover:bg-[var(--surface-3)]">
+                              {c.name}
+                            </Link>
+                            {(c.subCategories ?? []).map((s) => (
+                              <Link key={s.id} to={`/shop?cat=${encodeURIComponent(c.name)}&sub=${encodeURIComponent(s.name)}`}
+                                className="ml-3 flex items-center justify-between rounded-lg px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                                {s.name}
+                              </Link>
+                            ))}
+                          </div>
+                        ))}
+                        {/* <Link to="/shop?sort=off" className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                          Top deals
+                        </Link> */}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <button type="button" aria-haspopup="menu"
+                        className="flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                        {m.label} <ChevronDown className="h-3.5 w-3.5 transition group-hover:rotate-180" />
+                      </button>
+                      <div className="invisible absolute top-full left-0 z-50 w-60 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-1.5 opacity-0 shadow-[var(--shadow-raised)] transition-all duration-150 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+                        {m.items.map((it) => (
+                          <Link key={it.to} to={it.to}
+                            className="flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-3)] hover:text-[var(--text)]">
+                            {it.label}
+                            {it.hint && <span className="text-[11px] font-normal text-[var(--text-subtle)]">{it.hint}</span>}
+                          </Link>
+                        ))}
+                      </div>
+                    </>
+                  )
                 ) : (
                   <NavLink to={m.to!} className={({ isActive }) => linkCls(isActive)}>{m.label}</NavLink>
                 )}
@@ -195,7 +228,7 @@ export function Shell({ children }: { children: ReactNode }) {
               {(SHOP_MENUS.find((m) => m.label === 'Shop')?.items ?? []).map((it) => (
                 <li key={it.to}><Link to={it.to} className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">{it.label}</Link></li>
               ))}
-              <li><Link to="/shop?sort=off" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Top deals</Link></li>
+              {/* <li><Link to="/shop?sort=off" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Top deals</Link></li> */}
               {!student && (
                 <li><Link to="/sell" className="text-[var(--text-muted)] hover:text-[var(--text)] hover:underline">Sell with us</Link></li>
               )}

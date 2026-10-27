@@ -32,7 +32,9 @@ class StudentController extends Controller {
         $u = $r->user();
         $d = $r->validate([
             'items' => 'required|array|min:1',
-            'items.*.id' => 'nullable|integer|exists:products,id',
+            'items.*.id' => 'nullable',
+            'items.*.product_id' => 'nullable',
+            'items.*.product_code' => 'nullable|string',
             'items.*.qty' => 'nullable|integer|min:1',
             'total' => 'required|numeric|min:0',
             'pay_mode' => 'nullable|string|max:50',
@@ -71,16 +73,25 @@ class StudentController extends Controller {
         ]);
     }
     private function cartFor(User $u): Cart { return Cart::firstOrCreate(['user_id' => $u->id]); }
+    private function resolveProduct($key): Product {
+        if (is_numeric($key)) {
+            $p = Product::find($key);
+            if ($p) return $p;
+        }
+        return Product::where('product_code', (string) $key)->firstOrFail();
+    }
     public function cartIndex(Request $r) {
         $u = $r->user();
-        $cart = $this->cartFor($u)->load('items');
-        return $cart->items->map(fn($i) => ['product_id' => (string) $i->product_id, 'qty' => (int) $i->qty])->values();
+        $cart = $this->cartFor($u)->load('items.product');
+        return $cart->items->map(fn($i) => ['product_code' => (string) ($i->product?->product_code ?? $i->product_id), 'qty' => (int) $i->qty])->values();
     }
     public function cartAdd(Request $r) {
         $u = $r->user();
-        $d = $r->validate(['product_id' => 'required|integer|exists:products,id', 'qty' => 'nullable|integer|min:1']);
-        $qty = (int) ($d['qty'] ?? 1);
-        $product = Product::findOrFail($d['product_id']);
+        $key = $r->input('product_code') ?? $r->input('product') ?? $r->input('product_id');
+        $r->validate(['qty' => 'nullable|integer|min:1']);
+        if (empty($key)) abort(422, 'product_id is required.');
+        $qty = (int) ($r->input('qty') ?? 1);
+        $product = $this->resolveProduct($key);
         if (!$product->is_active) abort(422, 'This product is no longer available.');
         $cart = $this->cartFor($u);
         $line = CartItem::firstOrNew(['cart_id' => $cart->id, 'product_id' => $product->id]);
@@ -88,12 +99,12 @@ class StudentController extends Controller {
         if ($newQty > $product->stock) abort(422, 'Only '.$product->stock.' in stock for '.$product->name.'.');
         $line->qty = $newQty;
         $line->save();
-        return response()->json(['product_id' => (string) $product->id, 'qty' => (int) $line->qty], 201);
+        return response()->json(['product_code' => (string) $product->product_code, 'qty' => (int) $line->qty], 201);
     }
     public function cartUpdate(Request $r, $product) {
         $u = $r->user();
         $d = $r->validate(['qty' => 'required|integer|min:0']);
-        $product = Product::findOrFail($product);
+        $product = $this->resolveProduct($product);
         $cart = $this->cartFor($u);
         $line = CartItem::where('cart_id', $cart->id)->where('product_id', $product->id)->first();
         if (!$line) return response()->json(['message' => 'Not in cart'], 404);
@@ -101,12 +112,17 @@ class StudentController extends Controller {
         if ((int) $d['qty'] > $product->stock) abort(422, 'Only '.$product->stock.' in stock for '.$product->name.'.');
         $line->qty = (int) $d['qty'];
         $line->save();
-        return response()->json(['product_id' => (string) $product->id, 'qty' => (int) $line->qty]);
+        return response()->json(['product_code' => (string) $product->product_code, 'qty' => (int) $line->qty]);
     }
     public function cartRemove(Request $r, $product) {
         $u = $r->user();
         $cart = $this->cartFor($u);
-        CartItem::where('cart_id', $cart->id)->where('product_id', $product)->delete();
+        $productId = $product;
+        if (!is_numeric($product)) {
+            $p = Product::where('product_code', $product)->first();
+            $productId = $p?->id ?? $product;
+        }
+        CartItem::where('cart_id', $cart->id)->where('product_id', $productId)->delete();
         return response()->json(['removed' => true]);
     }
     public function cartClear(Request $r) {
@@ -117,17 +133,23 @@ class StudentController extends Controller {
     }
     public function wishlistIndex(Request $r) {
         $u = $r->user();
-        return WishlistItem::where('user_id', $u->id)->pluck('product_id')->map(fn($id) => (string) $id)->values();
+        return WishlistItem::where('user_id', $u->id)->with('product')->get()
+            ->map(fn($w) => (string) ($w->product?->product_code ?? $w->product_id))->values();
     }
     public function wishlistAdd(Request $r, $product) {
         $u = $r->user();
-        $product = Product::findOrFail($product);
+        $product = $this->resolveProduct($product);
         WishlistItem::firstOrCreate(['user_id' => $u->id, 'product_id' => $product->id]);
-        return response()->json(['product_id' => (string) $product->id], 201);
+        return response()->json(['product_code' => (string) $product->product_code], 201);
     }
     public function wishlistRemove(Request $r, $product) {
         $u = $r->user();
-        WishlistItem::where('user_id', $u->id)->where('product_id', $product)->delete();
+        $productId = $product;
+        if (!is_numeric($product)) {
+            $p = Product::where('product_code', $product)->first();
+            $productId = $p?->id ?? $product;
+        }
+        WishlistItem::where('user_id', $u->id)->where('product_id', $productId)->delete();
         return response()->json(['removed' => true]);
     }
 

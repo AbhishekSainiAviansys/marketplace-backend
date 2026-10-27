@@ -1,11 +1,13 @@
 <?php
 namespace App\Http\Controllers;
-use App\Models\{User,Vendor,School,Category,CategoryField,Product,ProductValue,ProductImage,SubCategory,ProductVariant};
+use App\Models\{User,Vendor,School,Category,CategoryField,Product,ProductValue,ProductImage,SubCategory,ProductVariant,ProductStock,StockTracking};
+use App\Traits\ManagesProductStock;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class AdminController extends Controller {
+    use ManagesProductStock;
 
     // GET /admin/dashboard - panel counters. Was missing: the Admin UI already
     // called /admin/dashboard and always fell back to "API offline".
@@ -411,6 +413,7 @@ class AdminController extends Controller {
         return response()->json(['deleted'=>true]);
     }
 
+    public function fieldStore(Request $r){
         $d=$r->validate(['category_id'=>'required|exists:categories,id','field_name'=>'required','field_label'=>'required','field_type'=>'required','is_required'=>'boolean']);
         return CategoryField::create($d);
     }
@@ -427,14 +430,16 @@ class AdminController extends Controller {
     }
 
     public function productIndex(Request $r){
-        $q=Product::with('category','subCategory','values','images','variants');
+        $q=Product::with('category','subCategory','values','images','variants','productStocks','stockTrackings');
         // ?search= powers the Home-content boost picker.
         if($r->search) $q->where('name','like','%'.$r->search.'%');
         return $q->paginate($r->per_page??20);
     }
 
     public function productShow($id){
-        return response()->json(Product::with('category','subCategory','values','images','variants')->findOrFail($id));
+        $q = Product::with('category','subCategory','values','images','variants','productStocks','stockTrackings');
+        $p = is_numeric($id) ? $q->findOrFail($id) : $q->where('product_code', $id)->firstOrFail();
+        return response()->json($p);
     }
 
     public function productStore(Request $r){
@@ -442,7 +447,8 @@ class AdminController extends Controller {
     }
 
     public function productUpdate(Request $r,$id){
-        $p=Product::with('values','images')->findOrFail($id);
+        $q = Product::with('values','images');
+        $p = is_numeric($id) ? $q->findOrFail($id) : $q->where('product_code', $id)->firstOrFail();
 
         $allowed = ['category_id','sub_category_id','name','sku','price','mrp','stock','delivery_mode','delivery_charge','portal_charge','server_charge','payment_split','is_active','is_boost','boost_until'];
         foreach ($allowed as $field) {
@@ -482,22 +488,89 @@ class AdminController extends Controller {
             }
         }
 
-        return response()->json($p->fresh()->load('category','values','images'));
+        $hasVariants = $r->has('variants') && is_array($r->input('variants'));
+        if ($hasVariants) {
+            ProductVariant::where('product_id', $p->id)->delete();
+            $stock = 0;
+            foreach ($r->input('variants') as $v) {
+                if (!is_array($v)) continue;
+                $size = isset($v['size']) && $v['size'] !== '' ? (string) $v['size'] : null;
+                $color = isset($v['color']) && $v['color'] !== '' ? (string) $v['color'] : null;
+                $vstock = (int) ($v['stock'] ?? 0);
+                ProductVariant::create([
+                    'product_id' => $p->id,
+                    'size' => $size,
+                    'color' => $color,
+                    'sku' => $v['sku'] ?? null,
+                    'price' => isset($v['price']) && $v['price'] !== '' ? $v['price'] : null,
+                    'stock' => $vstock,
+                ]);
+                $stock += $vstock;
+            }
+            if (count($r->input('variants')) > 0) {
+                $p->stock = $stock;
+                $p->save();
+            }
+        }
+
+        $explicitStockRows = $this->extractStockRows($r);
+        if (!empty($explicitStockRows)) {
+            $this->persistProductStockRows($p, $explicitStockRows, 'product_updated');
+        } elseif ($hasVariants) {
+            $this->persistProductStockRows($p, $this->stockRowsFromVariants($p), 'product_updated');
+        } elseif ($r->has('stock')) {
+            $this->persistProductStockRows($p, [['quantity' => (int) $r->input('stock')]], 'product_updated');
+        }
+
+        return response()->json($p->fresh()->load('category','subCategory','values','images','variants','productStocks','stockTrackings'));
     }
 
     public function productDestroy($id){
-        Product::findOrFail($id)->delete();
+        $product = is_numeric($id) ? Product::findOrFail($id) : Product::where('product_code', $id)->firstOrFail();
+        $product->delete();
         return response()->json(['deleted' => true]);
     }
 
     private function saveProduct(Request $r, $type, $id){
-        $d=$r->validate(['category_id'=>'required|exists:categories,id','name'=>'required','sku'=>'nullable|string','price'=>'required|numeric','mrp'=>'nullable|numeric','stock'=>'integer','delivery_mode'=>'in:self,thirdparty,school_pickup','delivery_charge'=>'nullable|numeric','portal_charge'=>'nullable|numeric','server_charge'=>'nullable|numeric','school_id'=>'nullable|exists:schools,id','vendor_id'=>'nullable|exists:vendors,id','fields'=>'array','payment_split'=>'array','is_active'=>'boolean','is_boost'=>'boolean','boost_until'=>'nullable|date']);
+        $d=$r->validate(['category_id'=>'required|exists:categories,id','sub_category_id'=>'nullable|exists:sub_categories,id','name'=>'required','sku'=>'nullable|string','price'=>'required|numeric','mrp'=>'nullable|numeric','stock'=>'integer','delivery_mode'=>'in:self,thirdparty,school_pickup','delivery_charge'=>'nullable|numeric','portal_charge'=>'nullable|numeric','server_charge'=>'nullable|numeric','school_id'=>'nullable|exists:schools,id','vendor_id'=>'nullable|exists:vendors,id','fields'=>'array','payment_split'=>'array','is_active'=>'boolean','is_boost'=>'boolean','boost_until'=>'nullable|date','variants'=>'array']);
         $p=Product::create($d+['created_by_type'=>$type,'created_by_id'=>$id]);
         foreach (($d['fields']??[]) as $fid=>$val) ProductValue::create(['product_id'=>$p->id,'field_id'=>$fid,'value_text'=>$val]);
         foreach (($r->input('images') ?? []) as $i => $url) {
             if (!empty($url)) ProductImage::create(['product_id'=>$p->id,'url'=>$url,'is_primary'=>$i===0]);
         }
-        return response()->json($p->load('values','images'),201);
+        $vlist = $r->input('variants') ?? [];
+        $hasVariants = is_array($vlist) && count($vlist) > 0;
+        if ($hasVariants) {
+            $stock = 0;
+            foreach ($vlist as $v) {
+                if (!is_array($v)) continue;
+                $size = isset($v['size']) && $v['size'] !== '' ? (string) $v['size'] : null;
+                $color = isset($v['color']) && $v['color'] !== '' ? (string) $v['color'] : null;
+                $vstock = (int) ($v['stock'] ?? 0);
+                ProductVariant::create([
+                    'product_id' => $p->id,
+                    'size' => $size,
+                    'color' => $color,
+                    'sku' => $v['sku'] ?? null,
+                    'price' => isset($v['price']) && $v['price'] !== '' ? $v['price'] : null,
+                    'stock' => $vstock,
+                ]);
+                $stock += $vstock;
+            }
+            $p->stock = $stock;
+            $p->save();
+        }
+
+        $explicitStockRows = $this->extractStockRows($r);
+        if (!empty($explicitStockRows)) {
+            $this->persistProductStockRows($p, $explicitStockRows, 'product_created');
+        } elseif ($hasVariants) {
+            $this->persistProductStockRows($p, $this->stockRowsFromVariants($p), 'product_created');
+        } elseif ($r->has('stock')) {
+            $this->persistProductStockRows($p, [['quantity' => (int) $r->input('stock')]], 'product_created');
+        }
+
+        return response()->json($p->fresh()->load('category','subCategory','values','images','variants','productStocks','stockTrackings'),201);
     }
 
     /** GET /admin/schools/stats - per-status counts for the school_new directory. */

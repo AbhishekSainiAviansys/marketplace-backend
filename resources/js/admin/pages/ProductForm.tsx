@@ -6,6 +6,7 @@ import { assetUrl } from '@lib/brand'
 import { useToast } from '@ui'
 
 type Cat = { id: number; name: string }
+type StockRow = { colour: string; size: string; quantity: number }
 type CatField = {
   id: number
   field_name: string
@@ -25,10 +26,13 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const toast = useToast()
   const [cats, setCats] = useState<Cat[]>([])
   const [catId, setCatId] = useState('')
+  const [subCats, setSubCats] = useState<Cat[]>([])
+  const [subCatId, setSubCatId] = useState('')
   const [fields, setFields] = useState<CatField[]>([])
   const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', portal_charge: '', server_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '' })
   const [vals, setVals] = useState<Record<string, string>>({})
   const [images, setImages] = useState<string[]>([])
+  const [stocks, setStocks] = useState<StockRow[]>([{ colour: '', size: '', quantity: 0 }])
   const mrpNum = Number(form.mrp || 0)
   const priceNum = Number(form.price || 0)
   const discountAmount = mrpNum > priceNum && mrpNum > 0 ? mrpNum - priceNum : 0
@@ -63,6 +67,15 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         setCatId(p.category_id ? String(p.category_id) : '')
         if (p.category_id) {
           try {
+            const { data } = await api.get(`/${prefix}/sub-categories?category_id=${p.category_id}`)
+            setSubCats(data)
+          } catch {
+            setSubCats([])
+          }
+          setSubCatId(p.sub_category_id ? String(p.sub_category_id) : '')
+        }
+        if (p.category_id) {
+          try {
             const { data } = await api.get(`/categories/${p.category_id}/fields`)
             setFields(data)
           } catch {
@@ -85,6 +98,14 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         for (const v of p.values ?? []) vmap[String(v.field_id)] = v.value_text ?? ''
         setVals(vmap)
         setImages((p.images ?? []).map((img: { url?: string }) => img.url).filter(Boolean))
+        const prev: StockRow[] = (p.product_stocks ?? [])
+          .map((s: { colour?: string; color?: string; size?: string; quantity?: number; stock?: number }) => ({
+            colour: s.colour ?? s.color ?? '',
+            size: s.size ?? '',
+            quantity: Number(s.quantity ?? s.stock ?? 0),
+          }))
+          .filter((s: StockRow) => (s.colour || s.size) && s.quantity > 0)
+        setStocks(prev.length ? prev : [{ colour: '', size: '', quantity: 0 }])
       })
       .catch((e) => toast('err', errMsg(e, 'Could not load product')))
   }, [id, prefix])
@@ -92,9 +113,17 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const pick = async (id: string) => {
     setCatId(id)
     setVals({})
+    setSubCats([])
+    setSubCatId('')
     if (!id) {
       setFields([])
       return
+    }
+    try {
+      const { data } = await api.get(`/${prefix}/sub-categories?category_id=${id}`)
+      setSubCats(data)
+    } catch {
+      setSubCats([])
     }
     try {
       const { data } = await api.get(`/categories/${id}/fields`)
@@ -137,8 +166,12 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
       const payload = {
         ...form,
         category_id: Number(catId),
+        sub_category_id: subCatId === '' ? null : Number(subCatId),
         fields: vals,
         images,
+        product_stocks: stocks
+          .filter((s) => (s.colour || s.size) && s.quantity > 0)
+          .map((s) => ({ colour: s.colour, size: s.size, quantity: Number(s.quantity) })),
         is_boost: form.is_boost,
         boost_until: form.boost_until || null,
         delivery_charge: form.delivery_charge === '' ? null : Number(form.delivery_charge),
@@ -198,6 +231,22 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
           ))}
         </select>
       </label>
+
+      {subCats.length > 0 && (
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Sub-category (optional)</span>
+          <select
+            value={subCatId}
+            onChange={(e) => setSubCatId(e.target.value)}
+            className="field focus:field-focus outline-none"
+          >
+            <option value="">-- none --</option>
+            {subCats.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {catId && (
         <form id="product-form" onSubmit={save} className="mt-4 space-y-3 border-t border-slate-100 pt-4">
@@ -317,6 +366,81 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
                 className="field focus:field-focus outline-none"
               />
             </label>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="mb-2 flex items-center justify-between">
+              <span className="text-sm font-semibold text-slate-800">Colour / Size / Quantity variants</span>
+              <button
+                type="button"
+                onClick={() => setStocks([...stocks, { colour: '', size: '', quantity: 0 }])}
+                className="text-xs font-medium text-accent hover:underline"
+              >
+                + Add variant
+              </button>
+            </div>
+            <p className="mb-3 text-xs text-slate-500">
+              One row per colour/size combination. Quantity is summed into the product stock total automatically.
+            </p>
+            <div className="space-y-3">
+              {stocks.map((s, i) => (
+                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-end">
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Colour</span>
+                    <input
+                      value={s.colour}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setStocks(stocks.map((r, k) => (k === i ? { ...r, colour: v } : r)))
+                      }}
+                      placeholder="e.g. Blue"
+                      className="field focus:field-focus outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Size</span>
+                    <input
+                      value={s.size}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        setStocks(stocks.map((r, k) => (k === i ? { ...r, size: v } : r)))
+                      }}
+                      placeholder="e.g. 500ml"
+                      className="field focus:field-focus outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Quantity</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={s.quantity}
+                      onChange={(e) => {
+                        const v = Number(e.target.value)
+                        setStocks(stocks.map((r, k) => (k === i ? { ...r, quantity: v } : r)))
+                      }}
+                      className="field focus:field-focus outline-none"
+                    />
+                  </label>
+                  <div className="flex items-end">
+                    {stocks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setStocks(stocks.filter((_, k) => k !== i))}
+                        className="text-xs font-medium text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            {stocks.some((s) => (s.colour || s.size) && s.quantity > 0) && (
+              <p className="mt-2 text-xs text-slate-500">
+                Total stock from variants: {stocks.reduce((a, s) => a + (s.quantity || 0), 0)}
+              </p>
+            )}
           </div>
 
            {fields.map((f) => {

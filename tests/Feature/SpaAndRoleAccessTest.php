@@ -59,7 +59,7 @@ class SpaAndRoleAccessTest extends TestCase
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id();
+            $t->id(); $t->string('product_code',32)->nullable()->unique();
             $t->string('name');
             $t->decimal('price', 10, 2);
             $t->timestamps();
