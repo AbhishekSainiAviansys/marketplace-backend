@@ -23,7 +23,11 @@ class StudentController extends Controller
     {
         $u = $r->user();
 
-        return $u->orders()->orderByDesc('placed_at')->orderByDesc('id')->get();
+        return $u->orders()
+            ->whereNotIn('payment_status', ['pending', 'failed', 'expired'])
+            ->orderByDesc('placed_at')
+            ->orderByDesc('id')
+            ->get();
     }
 
     public function orderShow(Request $r, $order)
@@ -31,6 +35,7 @@ class StudentController extends Controller
         $u = $r->user();
 
         return Order::where('user_id', $u->id)
+            ->whereNotIn('payment_status', ['pending', 'failed', 'expired'])
             ->where(function ($w) use ($order) {
                 $w->where('id', $order)->orWhere('order_code', $order);
             })
@@ -52,18 +57,14 @@ class StudentController extends Controller
             'pay_mode' => 'nullable|string|max:50',
             'delivery' => 'nullable|string|max:100',
             'address' => 'nullable|string',
-            'status' => 'nullable|string|max:30',
-            'payment_status' => 'nullable|string|max:20',
-            'payment_provider' => 'nullable|string|max:30',
-            'provider_order_id' => 'nullable|string|max:64',
-            'payment_ref' => 'nullable|string|max:64',
             'coupon_code' => 'nullable|string|max:64',
         ]);
-        $payment = array_intersect_key($d, array_flip(['status', 'payment_status', 'payment_provider', 'provider_order_id', 'payment_ref']));
-        if (! empty($d['paid_at'])) {
-            $payment['paid_at'] = $d['paid_at'];
+        $payMode = strtolower(trim((string) ($d['pay_mode'] ?? 'cash on delivery')));
+        if (! in_array($payMode, ['cash on delivery', 'cod', 'pay at pickup'], true)) {
+            abort(422, 'Online orders must use the Razorpay payment flow.');
         }
-        $order = $orders->create($u, $d, $payment);
+        $d['pay_mode'] = $payMode === 'pay at pickup' ? 'Pay at pickup' : 'Cash on Delivery';
+        $order = $orders->create($u, $d, ['status' => 'Placed', 'payment_status' => 'unpaid']);
 
         return response()->json($order, 201);
     }

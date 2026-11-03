@@ -10,6 +10,7 @@ use App\Models\ProductStock;
 use App\Models\SubCategory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 
 class ProductStockPersistenceTest extends TestCase
@@ -155,6 +156,8 @@ class ProductStockPersistenceTest extends TestCase
             $t->string('payment_provider', 30)->nullable();
             $t->string('provider_order_id', 64)->nullable();
             $t->string('payment_ref', 64)->nullable();
+            $t->timestamp('stock_reserved_until')->nullable();
+            $t->timestamp('stock_released_at')->nullable();
             $t->timestamp('placed_at')->nullable();
             $t->timestamp('paid_at')->nullable();
             $t->timestamps();
@@ -347,20 +350,38 @@ class ProductStockPersistenceTest extends TestCase
         ]);
         $providerOrderId = 'order_local_test_1';
         $paymentId = 'pay_local_test_1';
+        Http::fake([
+            'https://api.razorpay.com/v1/orders' => Http::response([
+                'id' => $providerOrderId,
+                'amount' => 23600,
+                'currency' => 'INR',
+            ], 200),
+            'https://api.razorpay.com/v1/payments/'.$paymentId => Http::response([
+                'id' => $paymentId,
+                'order_id' => $providerOrderId,
+                'amount' => 23600,
+                'currency' => 'INR',
+                'status' => 'captured',
+            ], 200),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/student/payments/razorpay/order', [
+                'items' => [[
+                    'product_code' => $product->product_code,
+                    'qty' => 2,
+                    'color' => 'Blue',
+                    'size' => '500ml',
+                ]],
+                'delivery' => 'Pickup from school',
+            ])
+            ->assertCreated();
 
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/student/payments/razorpay/verify', [
                 'razorpay_order_id' => $providerOrderId,
                 'razorpay_payment_id' => $paymentId,
                 'razorpay_signature' => hash_hmac('sha256', $providerOrderId.'|'.$paymentId, $secret),
-                'items' => [[
-                    'id' => $product->id,
-                    'qty' => 2,
-                    'price' => 100,
-                    'color' => 'Blue',
-                    'size' => '500ml',
-                ]],
-                'total' => 200,
             ])
             ->assertCreated();
 
@@ -380,9 +401,90 @@ class ProductStockPersistenceTest extends TestCase
             'color_code' => '#3B82F6',
             'size' => '500ml',
             'delta' => -2,
-            'reason' => 'ordered',
+            'reason' => 'payment_reserved',
         ]);
         $this->assertDatabaseMissing('cart_items', ['cart_id' => $cart->id]);
+    }
+
+    public function test_cancelled_variant_payment_restores_variant_stock_and_keeps_cart(): void
+    {
+        $student = User::create([
+            'name' => 'Cancel Student',
+            'email' => 'cancel.student@test.local',
+            'password' => bcrypt('secret'),
+            'role' => 'student',
+            'is_active' => true,
+        ]);
+        $category = Category::create(['name' => 'Bottles', 'slug' => 'cancel-bottles', 'is_active' => true]);
+        $product = Product::create([
+            'category_id' => $category->id,
+            'created_by_type' => 'vendor',
+            'created_by_id' => 1,
+            'name' => 'Blue Bottle',
+            'price' => 100,
+            'stock' => 5,
+            'is_active' => true,
+        ]);
+        $product->is_variant = true;
+        $product->save();
+        ProductStock::create([
+            'product_id' => $product->id,
+            'colour' => 'Blue',
+            'color' => 'Blue',
+            'color_code' => '#3B82F6',
+            'size' => '500ml',
+            'quantity' => 5,
+            'stock' => 5,
+            'qty' => 5,
+        ]);
+        $cart = Cart::create(['user_id' => $student->id]);
+        CartItem::create([
+            'cart_id' => $cart->id,
+            'product_id' => $product->id,
+            'color' => 'Blue',
+            'size' => '500ml',
+            'qty' => 2,
+        ]);
+        $token = $student->createToken('test')->plainTextToken;
+        \DB::table('credentials')->insert([
+            'title' => 'Razorpay',
+            'public' => 'test-key',
+            'private' => 'local-test-secret',
+            'status' => 'Active',
+        ]);
+        Http::fake([
+            'https://api.razorpay.com/v1/orders' => Http::response([
+                'id' => 'order_variant_cancel',
+                'amount' => 23600,
+                'currency' => 'INR',
+            ], 200),
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/student/payments/razorpay/order', [
+                'items' => [[
+                    'product_code' => $product->product_code,
+                    'qty' => 2,
+                    'color' => 'Blue',
+                    'size' => '500ml',
+                ]],
+                'delivery' => 'Pickup from school',
+            ])
+            ->assertCreated();
+        $this->assertDatabaseHas('product_stock', ['product_id' => $product->id, 'quantity' => 3]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/student/payments/razorpay/cancel', ['razorpay_order_id' => 'order_variant_cancel'])
+            ->assertOk();
+
+        $this->assertDatabaseHas('product_stock', ['product_id' => $product->id, 'quantity' => 5]);
+        $this->assertDatabaseHas('products', ['id' => $product->id, 'stock' => 5]);
+        $this->assertDatabaseHas('stock_tracking', [
+            'product_id' => $product->id,
+            'delta' => 2,
+            'reason' => 'payment_reservation_released',
+        ]);
+        $this->assertDatabaseHas('cart_items', ['cart_id' => $cart->id, 'qty' => 2]);
     }
 
     public function test_student_order_decrements_simple_product_stock_without_options(): void

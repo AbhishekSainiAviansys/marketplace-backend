@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Http\Controllers\NotificationController;
 use App\Models\Cart;
+use App\Models\Coupon;
 use App\Models\CouponUsage;
 use App\Models\Order;
 use App\Models\Product;
@@ -51,6 +52,8 @@ class OrderService
                 $product = $this->findProduct($key);
                 if ($product) {
                     $it['product_code'] = $product->product_code;
+                    $it['name'] = $product->name;
+                    $it['price'] = (float) $product->price;
                 } elseif ($key !== null && empty($it['product_code'])) {
                     $it['product_code'] = (string) $key;
                 }
@@ -76,7 +79,15 @@ class OrderService
                     abort(422, 'Choose a colour and size for '.$product->name.'.');
                 }
                 $stockRecord = $inventory->findStockRecord($product, $color, $size, true);
-                $inventory->decrementForOrder($product, $stockRecord, $qty, $color, $size, $hasVariants);
+                $inventory->decrementForOrder(
+                    $product,
+                    $stockRecord,
+                    $qty,
+                    $color,
+                    $size,
+                    $hasVariants,
+                    (string) ($payment['stock_reason'] ?? 'ordered'),
+                );
 
                 if ($product->created_by_type === 'admin' || $product->added_by_role === 'admin') {
                     $notifyAdmin = true;
@@ -164,11 +175,11 @@ class OrderService
                 'delivery' => $data['delivery'] ?? null,
                 'address' => $data['address'] ?? null,
                 'status' => $data['status'] ?? 'Placed',
-                'placed_at' => now(),
-                'payment_status' => 'paid',
-                'paid_at' => now(),
+                'placed_at' => ($payment['payment_status'] ?? null) === 'pending' ? null : now(),
+                'payment_status' => $payment['payment_status'] ?? 'paid',
+                'paid_at' => ($payment['payment_status'] ?? 'paid') === 'paid' ? now() : null,
             ], array_intersect_key($payment, array_flip([
-                'status', 'payment_status', 'payment_provider', 'provider_order_id', 'payment_ref', 'paid_at',
+                'status', 'payment_status', 'payment_provider', 'provider_order_id', 'payment_ref', 'paid_at', 'stock_reserved_until',
             ])));
             if (Schema::hasColumn('orders', 'subtotal')) {
                 $payload['subtotal'] = $subtotal;
@@ -204,35 +215,169 @@ class OrderService
                 ]);
             }
 
-            $cart = Cart::where('user_id', $u->id)->first();
-            if ($cart) {
-                $cart->items()->delete();
+            if ($payment['clear_cart'] ?? true) {
+                $cart = Cart::where('user_id', $u->id)->first();
+                if ($cart) {
+                    $cart->items()->delete();
+                }
             }
 
             return $order;
         });
 
         if ($notifyAdmin && (($payment['payment_status'] ?? 'unpaid') === 'paid')) {
-            $title = 'New order for admin product';
-            $body = 'Order '.$order->order_code.' includes: '.implode(', ', array_values(array_unique($adminProductNames)));
-            $admins = User::where('role', 'admin')->get();
-            foreach ($admins as $admin) {
-                try {
-                    NotificationController::push($admin->id, $title, $body, 'order');
-                } catch (\Throwable $e) {
-                    Log::warning('Admin notification failed: '.$e->getMessage());
-                }
-                try {
-                    app(FcmService::class)->sendToUser($admin, $title, $body, [
-                        'order_id' => $order->id,
-                        'order_code' => $order->order_code,
-                    ]);
-                } catch (\Throwable $e) {
-                    Log::warning('FCM notification failed: '.$e->getMessage());
-                }
-            }
+            $this->notifyAdminAboutOrder($order, $adminProductNames);
         }
 
         return $order;
+    }
+
+    public function confirmPayment(Order $order, string $paymentId): Order
+    {
+        $confirmedNow = false;
+        $result = DB::transaction(function () use ($order, $paymentId, &$confirmedNow) {
+            $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+            if ($locked->payment_status === 'paid') {
+                if ($locked->payment_ref !== $paymentId) {
+                    abort(409, 'This payment order was already confirmed with a different payment.');
+                }
+
+                return ['order' => $locked, 'expired' => false];
+            }
+            if ($locked->payment_status !== 'pending' || $locked->stock_released_at !== null) {
+                abort(422, 'This payment attempt is no longer active.');
+            }
+            if ($locked->stock_reserved_until && $locked->stock_reserved_until->isPast()) {
+                $this->releaseReservationLocked($locked, 'expired');
+
+                return ['order' => $locked->fresh(), 'expired' => true];
+            }
+
+            $locked->update([
+                'status' => 'Placed',
+                'payment_status' => 'paid',
+                'payment_ref' => $paymentId,
+                'paid_at' => now(),
+                'placed_at' => now(),
+            ]);
+            $cart = Cart::where('user_id', $locked->user_id)->first();
+            if ($cart) {
+                $cart->items()->delete();
+            }
+            $confirmedNow = true;
+
+            return ['order' => $locked->fresh(), 'expired' => false];
+        });
+
+        if ($result['expired']) {
+            abort(422, 'The stock reservation expired before payment was confirmed.');
+        }
+        if ($confirmedNow) {
+            $this->notifyAdminAboutOrder($result['order'], []);
+        }
+
+        return $result['order'];
+    }
+
+    public function releasePaymentReservation(Order $order, string $status = 'failed'): Order
+    {
+        return DB::transaction(function () use ($order, $status) {
+            $locked = Order::query()->lockForUpdate()->findOrFail($order->id);
+            if ($locked->payment_status !== 'pending' || $locked->stock_released_at !== null) {
+                return $locked;
+            }
+
+            return $this->releaseReservationLocked($locked, $status);
+        });
+    }
+
+    public function expirePaymentReservations(): int
+    {
+        $expiredCount = 0;
+        Order::query()
+            ->where('payment_status', 'pending')
+            ->whereNotNull('stock_reserved_until')
+            ->where('stock_reserved_until', '<=', now())
+            ->orderBy('id')
+            ->chunkById(100, function ($orders) use (&$expiredCount): void {
+                foreach ($orders as $order) {
+                    $expired = $this->releasePaymentReservation($order, 'expired');
+                    if ($expired->payment_status === 'expired') {
+                        $expiredCount++;
+                    }
+                }
+            });
+
+        return $expiredCount;
+    }
+
+    private function releaseReservationLocked(Order $order, string $status): Order
+    {
+        $paymentStatus = in_array($status, ['failed', 'expired'], true) ? $status : 'failed';
+        $inventory = app(ProductStockService::class);
+        foreach ($order->items ?? [] as $item) {
+            $product = $this->findProduct($item['product_code'] ?? null, true);
+            if (! $product) {
+                continue;
+            }
+            $inventory->restoreReservation(
+                $product,
+                (int) ($item['qty'] ?? 1),
+                isset($item['color']) ? (string) $item['color'] : null,
+                isset($item['size']) ? (string) $item['size'] : null,
+            );
+        }
+
+        if ($order->coupon_id && Schema::hasTable('coupons')) {
+            $coupon = Coupon::query()->lockForUpdate()->find($order->coupon_id);
+            if ($coupon && $coupon->used_count > 0) {
+                $coupon->decrement('used_count');
+            }
+            CouponUsage::where('order_id', $order->id)->delete();
+        }
+
+        $order->update([
+            'payment_status' => $paymentStatus,
+            'status' => $paymentStatus === 'expired' ? 'Payment Expired' : 'Payment Failed',
+            'stock_released_at' => now(),
+        ]);
+
+        return $order->fresh();
+    }
+
+    private function notifyAdminAboutOrder(Order $order, array $adminProductNames): void
+    {
+        if ($adminProductNames === []) {
+            $codes = collect($order->items ?? [])->pluck('product_code')->filter()->unique();
+            $adminProductNames = Product::query()
+                ->whereIn('product_code', $codes)
+                ->where(function ($query) {
+                    $query->where('created_by_type', 'admin')->orWhere('added_by_role', 'admin');
+                })
+                ->pluck('name')
+                ->all();
+        }
+        if ($adminProductNames === []) {
+            return;
+        }
+
+        $title = 'New order for admin product';
+        $body = 'Order '.$order->order_code.' includes: '.implode(', ', array_values(array_unique($adminProductNames)));
+        $admins = User::where('role', 'admin')->get();
+        foreach ($admins as $admin) {
+            try {
+                NotificationController::push($admin->id, $title, $body, 'order');
+            } catch (\Throwable $e) {
+                Log::warning('Admin notification failed: '.$e->getMessage());
+            }
+            try {
+                app(FcmService::class)->sendToUser($admin, $title, $body, [
+                    'order_id' => $order->id,
+                    'order_code' => $order->order_code,
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('FCM notification failed: '.$e->getMessage());
+            }
+        }
     }
 }

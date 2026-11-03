@@ -1,13 +1,13 @@
 /** 4-step checkout: identity → address → payment → review → success. */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CreditCard, CheckCircle2, GraduationCap, MapPin, School, ShieldCheck, Truck } from 'lucide-react'
 import { Alert, EmptyState, Field } from '@ui'
-import { cartShipping, deliveryLabel, rupee, useShop } from '../store/shop'
+import { cartGst, cartShipping, deliveryLabel, rupee, useShop } from '../store/shop'
 import { errMsg } from '@lib/api'
 
 export function Checkout() {
-  const { cartDetailed, subTotal, mrpTotal, student, placeOrder } = useShop()
+  const { cart, cartDetailed, subTotal, mrpTotal, student, placeOrder, refreshProducts, couponCode, couponDiscount } = useShop()
   const nav = useNavigate()
   const [step, setStep] = useState(0)
   const [identityOk, setIdentityOk] = useState(false)
@@ -17,6 +17,7 @@ export function Checkout() {
   const [doneId, setDoneId] = useState('')
   const [err, setErr] = useState('')
   const [paying, setPaying] = useState(false)
+  const [stockRefresh, setStockRefresh] = useState<'loading' | 'ready' | 'error'>('loading')
   const hasStockIssue = cartDetailed.some(({ p, qty, color, size }) => {
     const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
     const variant = hasVariants ? (p.variants ?? []).find((row) => row.color === color && row.size === size) : undefined
@@ -24,7 +25,24 @@ export function Checkout() {
     return available <= 0 || qty > available
   })
   const ship = cartShipping(mode === 'pickup' ? 'pickup' : 'home', cartDetailed)
-  const total = subTotal + ship
+  const gst = cartGst(mode === 'pickup' ? 'pickup' : 'home', cartDetailed)
+  const total = Math.max(0, subTotal + ship + gst - couponDiscount)
+  const cartKey = [...new Set(cart.map((line) => line.id))].sort().join('|')
+  const refreshRef = useRef(refreshProducts)
+  refreshRef.current = refreshProducts
+
+  useEffect(() => {
+    if (!cartKey) {
+      setStockRefresh('ready')
+      return
+    }
+    let active = true
+    setStockRefresh('loading')
+    refreshRef.current(cartKey.split('|'))
+      .then(() => { if (active) setStockRefresh('ready') })
+      .catch(() => { if (active) setStockRefresh('error') })
+    return () => { active = false }
+  }, [cartKey])
 
   if (cartDetailed.length === 0 && !doneId) {
     return <div className="card"><EmptyState title="Nothing to check out" hint="Your cart is empty." action={<button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-primary">Back to shop</button>} /></div>
@@ -37,6 +55,10 @@ export function Checkout() {
     </div>
   }
   const place = async () => {
+    if (stockRefresh !== 'ready') {
+      setErr(stockRefresh === 'error' ? 'Could not verify current stock. Return to your cart and try again.' : 'Checking current stock. Please wait.')
+      return
+    }
     if (hasStockIssue) {
       setErr('Some items are out of stock or exceed available stock. Update your cart before placing the order.')
       return
@@ -44,9 +66,41 @@ export function Checkout() {
     setErr('')
     setPaying(true)
     try {
+      const freshProducts = await refreshProducts(cart.map((line) => line.id))
+      const freshByCode = new Map(freshProducts.map((product) => [product.id, product]))
+      const stockIssue = cart.find((line) => {
+        const product = freshByCode.get(line.id)
+        if (!product) return true
+        const hasVariants = product.is_variant ?? (product.variants ?? []).length > 0
+        const variant = hasVariants
+          ? (product.variants ?? []).find((row) => row.color === line.color && row.size === line.size)
+          : undefined
+        const available = hasVariants
+          ? Number(variant?.stock ?? 0)
+          : product.stock_rows?.length
+            ? product.stock_rows.reduce((sum, row) => sum + (row.quantity ?? row.stock ?? row.qty ?? 0), 0)
+            : product.stock
+        return available <= 0 || line.qty > available
+      })
+      if (stockIssue) {
+        throw new Error('Current stock is lower than your cart quantity. Review your cart before placing the order.')
+      }
+      const checkoutItems = cart.map((line) => {
+        const product = freshByCode.get(line.id)!
+        return {
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          qty: line.qty,
+          image: product.image,
+          color: line.color,
+          size: line.size,
+        }
+      })
       const o = await placeOrder({
-        items: cartDetailed.map(({ p, qty, color, size }) => ({ id: p.dbId != null ? String(p.dbId) : p.id, name: p.name, price: p.price, qty, image: p.image, color, size })),
+        items: checkoutItems,
         total, payMode: 'Online (Razorpay test)',
+        couponCode,
 
         delivery: mode === 'pickup' ? 'Pickup from school' : 'Home delivery',
         address: mode === 'pickup' ? `Pickup · ${student.schoolCode}` : `${addr.line}, ${addr.pin} · ${addr.phone}`,
@@ -194,6 +248,8 @@ export function Checkout() {
               <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Discounted subtotal</dt><dd className="tnum font-semibold">{rupee(subTotal)}</dd></div>
               <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Discount</dt><dd className="tnum font-semibold">{rupee(mrpTotal - subTotal)} ({mrpTotal > 0 ? Math.round(((mrpTotal - subTotal) / mrpTotal) * 100) : 0}%)</dd></div>
               <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery</dt><dd className="tnum font-semibold">{ship === 0 ? 'FREE' : rupee(ship)}</dd></div>
+              <div className="flex justify-between"><dt className="text-[var(--text-muted)]">GST (18%)</dt><dd className="tnum font-semibold">{rupee(gst)}</dd></div>
+              {couponCode && <div className="flex justify-between text-emerald-600"><dt>Coupon {couponCode}</dt><dd className="tnum font-semibold">-{rupee(couponDiscount)}</dd></div>}
               <div className="flex justify-between text-base font-bold"><dt>Payable total</dt><dd className="tnum">{rupee(total)}</dd></div>
             </dl>
             {hasStockIssue && (
@@ -201,10 +257,12 @@ export function Checkout() {
                 Some items are out of stock or exceed available stock. Update your cart before placing the order.
               </p>
             )}
+            {stockRefresh === 'loading' && <p className="text-xs text-[var(--text-muted)]">Checking current stock…</p>}
+            {stockRefresh === 'error' && <p className="text-xs text-rose-700">Could not verify current stock. Return to your cart and try again.</p>}
             {err && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{err}</p>}
             <div className="flex gap-2">
               <button onClick={() => setStep(2)} className="btn btn-secondary flex-1">Back</button>
-              <button onClick={place} className="btn btn-primary flex-1 !py-3" disabled={hasStockIssue || paying}>{paying ? 'Processing payment…' : `Place order · ${rupee(total)}`}</button>
+              <button onClick={place} className="btn btn-primary flex-1 !py-3" disabled={hasStockIssue || stockRefresh !== 'ready' || paying}>{paying ? 'Processing payment…' : `Place order · ${rupee(total)}`}</button>
             </div>
             <button onClick={() => nav('/cart')} className="w-full text-center text-xs text-[var(--text-muted)] hover:underline">Edit cart</button>
           </div>
@@ -216,6 +274,8 @@ export function Checkout() {
         <dl className="mt-3 space-y-1 text-sm">
           <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Subtotal</dt><dd className="tnum font-semibold">{rupee(subTotal)}</dd></div>
           <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery</dt><dd className="tnum font-semibold">{ship === 0 ? 'FREE' : rupee(ship)}</dd></div>
+          <div className="flex justify-between"><dt className="text-[var(--text-muted)]">GST</dt><dd className="tnum font-semibold">{rupee(gst)}</dd></div>
+          {couponCode && <div className="flex justify-between text-emerald-600"><dt>Coupon</dt><dd className="tnum font-semibold">-{rupee(couponDiscount)}</dd></div>}
         </dl>
         <p className="tnum mt-3 text-2xl font-bold">{rupee(total)}</p>
       </aside>

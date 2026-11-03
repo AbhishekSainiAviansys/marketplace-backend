@@ -54,8 +54,9 @@ type ShopCtx = {
   loadingMore: boolean; hasMore: boolean; fetchMore: (params?: { category?: string; sub?: string; search?: string }) => void
   /** Merge externally fetched rows (boost/random spotlight) into the catalogue. */
   mergeRows: (rows: Product[]) => void
+  refreshProducts: (ids: string[]) => Promise<Product[]>
   student: Student | null; login: (s: Student) => void; logout: () => void
-  cart: CartLine[]; add: (id: string, qty?: number, color?: string | null, size?: string | null) => void; setQty: (id: string, qty: number, color?: string | null, size?: string | null) => void
+  cart: CartLine[]; add: (id: string, qty?: number, color?: string | null, size?: string | null, freshProduct?: Product) => void; setQty: (id: string, qty: number, color?: string | null, size?: string | null) => void
   remove: (id: string, color?: string | null, size?: string | null) => void; clearCart: () => void
   wish: string[]; toggleWish: (id: string) => void
   cartDetailed: { p: Product; qty: number; color?: string | null; size?: string | null }[]; subTotal: number; mrpTotal: number; count: number
@@ -136,9 +137,21 @@ export async function fetchRandom(n: number): Promise<Product[]> {
   return rows.map(toProduct)
 }
 
+const productRequests = new Map<string, Promise<Product>>()
+
 export async function fetchProduct(id: string | number): Promise<Product> {
-  const r = await api.get(`/products/${encodeURIComponent(String(id))}`)
-  return toProduct(r.data as Record<string, unknown>, 0)
+  const key = String(id)
+  const pending = productRequests.get(key)
+  if (pending) return pending
+
+  const request = api.get(`/products/${encodeURIComponent(key)}`)
+    .then((r) => toProduct(r.data as Record<string, unknown>, 0))
+  productRequests.set(key, request)
+  void request.finally(() => {
+    if (productRequests.get(key) === request) productRequests.delete(key)
+  }).catch(() => {})
+
+  return request
 }
 
 export function ShopProvider({ children }: { children: ReactNode }) {
@@ -189,14 +202,24 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     finally { setLoadingMore(false) }
   }
 
-  /** Merge spotlight rows (boost/random) so their Add-to-cart works too. */
+  /** Merge new rows and replace cached rows with fresher API data. */
   const mergeRows = (rows: Product[]) => {
     if (rows.length === 0) return
     setProducts((prev) => {
-      const seen = new Set(prev.map((p) => p.id))
-      const add = rows.filter((p) => !seen.has(p.id))
-      return add.length > 0 ? [...prev, ...add] : prev
+      const incoming = new Map(rows.map((product) => [product.id, product]))
+      const merged = prev.map((product) => {
+        const fresh = incoming.get(product.id)
+        if (fresh) incoming.delete(product.id)
+        return fresh ?? product
+      })
+      return incoming.size > 0 ? [...merged, ...incoming.values()] : merged
     })
+  }
+
+  const refreshProducts = async (ids: string[]) => {
+    const rows = await Promise.all([...new Set(ids)].map(fetchProduct))
+    mergeRows(rows)
+    return rows
   }
 
   useEffect(() => { localStorage.setItem(C_KEY, JSON.stringify(cart)) }, [cart])
@@ -303,7 +326,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
 
   const v: ShopCtx = {
     products, live, loading,
-    loadingMore, hasMore: live && page < lastPage, fetchMore, mergeRows,
+    loadingMore, hasMore: live && page < lastPage, fetchMore, mergeRows, refreshProducts,
     student,
     login: (s) => {
       localStorage.setItem(S_KEY, JSON.stringify(s)); setStudent(s)
@@ -331,10 +354,10 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
     },
     logout: () => { localStorage.removeItem(S_KEY); localStorage.removeItem('token'); localStorage.removeItem('user'); setStudent(null); setCart([]); setWish([]); setOrders([]); setCouponCode(null); setCouponDiscount(0); try { localStorage.removeItem('mp-coupon') } catch {} },
     cart,
-    add: (id: string, qty = 1, color?: string | null, size?: string | null) => {
+    add: (id: string, qty = 1, color?: string | null, size?: string | null, freshProduct?: Product) => {
       if (!isAuthed()) {
         setCart((c) => {
-          const p = byId.get(id)
+          const p = freshProduct ?? byId.get(id)
           let cap = p ? Math.max(0, p.stock) : 9
           const hasVariants = p?.is_variant ?? (p?.variants ?? []).length > 0
           if (hasVariants) {
@@ -432,25 +455,32 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
 
     placeOrder: async (o) => {
       const token = localStorage.getItem('token')
-      let created: Record<string, unknown> | null = null
-      if (token) {
-        const missingLive = o.items.some((it) => !/^\d+$/.test(String(it.id)))
-        if (missingLive) {
-          throw new Error('Some cart items are not available for online payment. Please use products from the live catalogue.')
-        }
+      if (!token) throw new Error('Login required')
 
-        const createRes = await api.post('/student/payments/razorpay/order', {
-          amount: o.total,
-          currency: 'INR',
-          receipt: `rcpt_${Date.now()}`,
-        })
-        const { key_id, razorpay_order_id, amount, currency } = createRes.data as {
+      const createRes = await api.post('/student/payments/razorpay/order', {
+        items: o.items.map((item) => ({
+          product_code: item.id,
+          qty: item.qty,
+          color: item.color,
+          size: item.size,
+        })),
+        delivery: o.delivery,
+        address: o.address,
+        coupon_code: o.couponCode ?? couponCode ?? undefined,
+      })
+      const { key_id, razorpay_order_id, amount, currency } = createRes.data as {
           key_id: string
           razorpay_order_id: string
           amount: number
           currency: string
         }
+      let created: Record<string, unknown> | null = null
+      const cancelReservation = async () => {
+        await api.post('/student/payments/razorpay/cancel', { razorpay_order_id }).catch(() => {})
+      }
+      let gatewayPaymentSucceeded = false
 
+      try {
         await loadRazorpayScript()
         const RazorpayCtor = window.Razorpay
         if (!RazorpayCtor) throw new Error('Razorpay checkout failed to load.')
@@ -473,6 +503,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
             handler: (resp: any) => {
               if (settled) return
               settled = true
+              gatewayPaymentSucceeded = true
               resolve({
                 razorpay_order_id: String(resp?.razorpay_order_id ?? razorpay_order_id),
                 razorpay_payment_id: String(resp?.razorpay_payment_id ?? ''),
@@ -483,6 +514,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
               ondismiss: () => {
                 if (settled) return
                 settled = true
+                void cancelReservation()
                 reject(new Error('Payment cancelled'))
               },
             },
@@ -490,6 +522,8 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
           try { rzp.on('payment.failed', (resp: any) => {
             if (settled) return
             settled = true
+            rzp.close()
+            void cancelReservation()
             reject(new Error(resp?.error?.description || 'Payment failed'))
           }) } catch {}
           rzp.open()
@@ -499,18 +533,17 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
           razorpay_order_id: payment.razorpay_order_id,
           razorpay_payment_id: payment.razorpay_payment_id,
           razorpay_signature: payment.razorpay_signature,
-          items: o.items.map((it) => ({ id: it.id, name: it.name, qty: it.qty, price: it.price, image: it.image, color: it.color, size: it.size })),
-          total: o.total,
-          pay_mode: o.payMode,
-          delivery: o.delivery,
-          address: o.address,
-          coupon_code: o.couponCode ?? couponCode ?? undefined,
         })
         created = (verifyRes.data ?? null) as Record<string, unknown> | null
-        try { await api.delete('/student/cart') } catch {}
-        await loadCartFromBackend()
+      } catch (error) {
+        if (!gatewayPaymentSucceeded) await cancelReservation()
+        throw error
       }
-      const order: Order = created ? {
+
+      if (!created) throw new Error('Payment completed, but the order could not be confirmed. Contact support before retrying.')
+      try { await api.delete('/student/cart') } catch {}
+      await loadCartFromBackend()
+      const order: Order = {
         id: String(created.order_code ?? created.id ?? `ORD${Date.now().toString().slice(-6)}`),
         orderCode: created.order_code ? String(created.order_code) : undefined,
         items: o.items,
@@ -533,7 +566,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         cancelledAt: created.cancelled_at ? String(created.cancelled_at) : null,
         refundedAt: created.refunded_at ? String(created.refunded_at) : null,
         adminNote: created.admin_note ? String(created.admin_note) : null,
-      } : { ...o, id: `ORD${Date.now().toString().slice(-6)}`, date: new Date().toLocaleString(), status: 'Placed', paymentStatus: 'paid' }
+      }
       setOrders((prev) => [order, ...prev.filter((x) => x.id !== order.id)])
       setCouponCode(null)
       setCouponDiscount(0)

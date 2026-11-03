@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Heart, ShoppingCart, Star } from 'lucide-react'
-import { deliveryLabel, discount, fetchProduct, rupee, useShop } from '../store/shop'
+import { deliveryLabel, discount, errMsg, rupee, useShop } from '../store/shop'
 import type { Product } from '../data/products'
 import { ShareButton } from './ShareButton'
 
@@ -16,25 +16,36 @@ export function Stars({ v }: { v: number }) {
 }
 
 export function ProductCard({ p }: { p: Product }) {
-  const { add, wish, toggleWish, mergeRows } = useShop()
+  const { add, wish, toggleWish, refreshProducts } = useShop()
   const navigate = useNavigate()
   const [added, setAdded] = useState(false)
+  const [adding, setAdding] = useState(false)
+  const [actionError, setActionError] = useState('')
   const off = discount(p)
   const loved = wish.includes(p.id)
   const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
 
   const handleProductAction = async () => {
     if (hasVariants) {
-      try {
-        const row = await fetchProduct(p.id)
-        mergeRows([row])
-      } catch { /* product details fetch failed — still navigate */ }
       navigate(`/product/${p.id}`)
       return
     }
-    add(p.id)
-    setAdded(true)
-    window.setTimeout(() => setAdded(false), 1600)
+    setAdding(true)
+    setActionError('')
+    try {
+      const [fresh] = await refreshProducts([p.id])
+      if (fresh.stock <= 0) {
+        setActionError('This product is out of stock.')
+        return
+      }
+      add(p.id, 1, null, null, fresh)
+      setAdded(true)
+      window.setTimeout(() => setAdded(false), 1600)
+    } catch (error) {
+      setActionError(errMsg(error, 'Could not refresh product stock.'))
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (
@@ -58,14 +69,15 @@ export function ProductCard({ p }: { p: Product }) {
           {p.mrp > p.price && <span className="tnum text-xs text-[var(--text-subtle)] line-through">{rupee(p.mrp)}</span>}
         </div>
         <div className="mt-3 flex gap-2">
-          <button type="button" onClick={handleProductAction} className="btn btn-secondary flex-1 !py-2 text-xs" disabled={!hasVariants && p.stock <= 0}>
-            <ShoppingCart className="h-4 w-4" /> {hasVariants ? 'Choose options' : added ? 'Added' : 'Add to cart'}
+          <button type="button" onClick={handleProductAction} className="btn btn-secondary flex-1 !py-2 text-xs" disabled={adding || (!hasVariants && p.stock <= 0)}>
+            <ShoppingCart className="h-4 w-4" /> {adding ? 'Checking stock…' : hasVariants ? 'Choose options' : added ? 'Added' : 'Add to cart'}
           </button>
           <button onClick={() => toggleWish(p.id)} aria-label="Wishlist"
             className={`btn btn-icon !p-2 ${loved ? 'bg-rose-50 text-rose-500' : 'btn-secondary'}`}>
             <Heart className={`h-4 w-4 ${loved ? 'fill-rose-500' : ''}`} />
           </button>
         </div>
+        {actionError && <p className="mt-2 text-xs text-rose-600">{actionError}</p>}
         <ShareButton p={p} />
       </div>
     </article>

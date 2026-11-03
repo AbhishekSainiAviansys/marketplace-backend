@@ -89,6 +89,7 @@ class ProductStockService
         ?string $color,
         ?string $size,
         bool $hasVariants,
+        string $reason = 'ordered',
     ): void {
         $available = $this->available($product, $record, $hasVariants);
         if ($available < $quantity) {
@@ -124,31 +125,80 @@ class ProductStockService
             }
         }
 
-        if (Schema::hasTable('stock_tracking')) {
-            $tracking = [
-                'product_id' => $product->id,
-                'variant_id' => $variantId,
-                'reason' => 'ordered',
-                'created_at' => now(),
-            ];
-            foreach (['colour', 'color'] as $column) {
-                if (Schema::hasColumn('stock_tracking', $column)) {
-                    $tracking[$column] = $color;
-                }
-            }
-            if (Schema::hasColumn('stock_tracking', 'color_code')) {
-                $tracking['color_code'] = $record instanceof ProductStock ? $record->color_code : null;
-            }
-            if (Schema::hasColumn('stock_tracking', 'size')) {
-                $tracking['size'] = $size;
-            }
-            foreach (['delta', 'quantity', 'change', 'qty'] as $column) {
-                if (Schema::hasColumn('stock_tracking', $column)) {
-                    $tracking[$column] = -$quantity;
-                }
-            }
-            StockTracking::create($tracking);
+        $this->recordTracking($product, $record, -$quantity, $color, $size, $reason);
+    }
+
+    public function restoreReservation(Product $product, int $quantity, ?string $color, ?string $size): void
+    {
+        $hasVariants = $this->hasVariants($product);
+        $record = $this->findStockRecord($product, $color, $size, true);
+        if ($hasVariants && ! $record) {
+            abort(409, 'The reserved product option can no longer be restored.');
         }
+
+        if ($record instanceof ProductStock) {
+            foreach (['quantity', 'stock', 'qty'] as $column) {
+                if (Schema::hasColumn('product_stock', $column)) {
+                    $record->increment($column, $quantity);
+                }
+            }
+            if ($record->variant_id && Schema::hasTable('product_variants')) {
+                ProductVariant::whereKey($record->variant_id)->lockForUpdate()->increment('stock', $quantity);
+            }
+        } elseif ($record instanceof ProductVariant) {
+            $record->increment('stock', $quantity);
+        }
+
+        if (Schema::hasColumn('products', 'stock')) {
+            if ($record instanceof ProductStock && $hasVariants && Schema::hasColumn('product_stock', 'quantity')) {
+                $total = ProductStock::where('product_id', $product->id)->sum('quantity');
+                Product::whereKey($product->id)->update(['stock' => $total]);
+            } elseif ($record instanceof ProductVariant && $hasVariants) {
+                $total = ProductVariant::where('product_id', $product->id)->sum('stock');
+                Product::whereKey($product->id)->update(['stock' => $total]);
+            } else {
+                Product::whereKey($product->id)->increment('stock', $quantity);
+            }
+        }
+
+        $this->recordTracking($product, $record, $quantity, $color, $size, 'payment_reservation_released');
+    }
+
+    private function recordTracking(
+        Product $product,
+        ?Model $record,
+        int $delta,
+        ?string $color,
+        ?string $size,
+        string $reason,
+    ): void {
+        if (! Schema::hasTable('stock_tracking')) {
+            return;
+        }
+
+        $tracking = [
+            'product_id' => $product->id,
+            'variant_id' => $record instanceof ProductVariant ? $record->id : ($record instanceof ProductStock ? $record->variant_id : null),
+            'reason' => $reason,
+            'created_at' => now(),
+        ];
+        foreach (['colour', 'color'] as $column) {
+            if (Schema::hasColumn('stock_tracking', $column)) {
+                $tracking[$column] = $color;
+            }
+        }
+        if (Schema::hasColumn('stock_tracking', 'color_code')) {
+            $tracking['color_code'] = $record instanceof ProductStock ? $record->color_code : null;
+        }
+        if (Schema::hasColumn('stock_tracking', 'size')) {
+            $tracking['size'] = $size;
+        }
+        foreach (['delta', 'quantity', 'change', 'qty'] as $column) {
+            if (Schema::hasColumn('stock_tracking', $column)) {
+                $tracking[$column] = $delta;
+            }
+        }
+        StockTracking::create($tracking);
     }
 
     private function applyOption($query, string $table, array $columns, ?string $value): void

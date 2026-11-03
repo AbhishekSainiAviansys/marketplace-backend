@@ -59,7 +59,8 @@ class SpaAndRoleAccessTest extends TestCase
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id(); $t->string('product_code',32)->nullable()->unique();
+            $t->id();
+            $t->string('product_code', 32)->nullable()->unique();
             $t->string('name');
             $t->decimal('price', 10, 2);
             $t->timestamps();
@@ -94,13 +95,14 @@ class SpaAndRoleAccessTest extends TestCase
             'role' => $role,
             'is_active' => true,
         ]);
+
         return $u->createToken('test')->plainTextToken;
     }
 
     /** Every panel deep link returns the Blade SPA shell (HTML), not JSON. */
     public function test_panel_deep_links_are_served_by_the_blade_shell(): void
     {
-        foreach (['/', '/student/cart', '/admin', '/admin/products', '/vendor/schools', '/school/catalogue'] as $path) {
+        foreach (['/', '/student/cart', '/product/PRD000002', '/admin', '/admin/products', '/vendor/schools', '/school/catalogue'] as $path) {
             $res = $this->get($path);
             $res->assertOk();
             $res->assertHeader('content-type', 'text/html; charset=UTF-8');

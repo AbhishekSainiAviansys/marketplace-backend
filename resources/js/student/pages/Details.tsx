@@ -3,15 +3,20 @@ import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { CheckCircle2, ChevronLeft, ChevronRight, Heart, Maximize2, Minus, Plus, ShoppingCart, Truck, X, Zap, ZoomIn, ZoomOut } from 'lucide-react'
 import { EmptyState } from '@ui'
-import { deliveryLabel, discount, fetchProduct, rupee, useShop } from '../store/shop'
+import { deliveryLabel, discount, errMsg, fetchProduct, rupee, useShop, type Product } from '../store/shop'
 import { ProductCard, Stars } from '../components/ProductCard'
 import { usePageSeo } from '../lib/seo'
 
 export function Details() {
   const { id } = useParams()
-  const { products, add, wish, toggleWish, mergeRows } = useShop()
+  const { products, add, wish, toggleWish, mergeRows, refreshProducts } = useShop()
+  const [freshProduct, setFreshProduct] = useState<Product | null>(null)
+  const [productLoading, setProductLoading] = useState(true)
+  const [productError, setProductError] = useState(false)
   const [qty, setQty] = useState(1)
   const [added, setAdded] = useState(false)
+  const [actionBusy, setActionBusy] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [activeImg, setActiveImg] = useState('')
   const [zoom, setZoom] = useState(1)
   const [zoomOrigin, setZoomOrigin] = useState('center center')
@@ -21,7 +26,7 @@ export function Details() {
   const imgBoxRef = useRef<HTMLDivElement>(null)
   const lightboxRef = useRef<HTMLDivElement>(null)
   const nav = useNavigate()
-  const p = products.find((x) => x.id === id)
+  const p = freshProduct?.id === id ? freshProduct : null
 
   // SEO tags (applied unconditionally — hooks must never be conditional).
   // Before the product loads (deep-link fetch) we render a placeholder title.
@@ -49,13 +54,25 @@ export function Details() {
   mergeRef.current = mergeRows
 
   useEffect(() => {
-    if (!id || p) return
     let alive = true
+    setFreshProduct(null)
+    setProductError(false)
+    setProductLoading(true)
+    if (!id) {
+      setProductError(true)
+      setProductLoading(false)
+      return () => { alive = false }
+    }
     fetchProduct(id)
-      .then((row) => { if (alive) mergeRef.current([row]) })
-      .catch(() => { /* genuinely missing — the not-found card shows below */ })
+      .then((row) => {
+        if (!alive) return
+        setFreshProduct(row)
+        mergeRef.current([row])
+      })
+      .catch(() => { if (alive) setProductError(true) })
+      .finally(() => { if (alive) setProductLoading(false) })
     return () => { alive = false }
-  }, [id, p])
+  }, [id])
 
   useEffect(() => {
     if (!p) return
@@ -155,19 +172,42 @@ export function Details() {
     setActiveImg(imageList[(index + imageList.length) % imageList.length])
     resetZoom()
   }
-  const buy = () => {
+  const addFreshProduct = async (goToCheckout: boolean) => {
     if (!p) return
-    add(p.id, qty, selectedColor, selectedSize)
-    nav('/checkout')
-  }
-  const cart = () => {
-    if (!p) return
-    add(p.id, qty, selectedColor, selectedSize)
-    setAdded(true)
-    setTimeout(() => setAdded(false), 1600)
+    setActionBusy(true)
+    setActionError('')
+    try {
+      const [fresh] = await refreshProducts([p.id])
+      setFreshProduct(fresh)
+      const freshVariant = (fresh.variants ?? []).find((row) => row.color === selectedColor && row.size === selectedSize)
+      const freshAvailable = fresh.is_variant
+        ? Number(freshVariant?.stock ?? 0)
+        : fresh.stock_rows?.length
+          ? fresh.stock_rows.reduce((sum, row) => sum + (row.quantity ?? row.stock ?? row.qty ?? 0), 0)
+          : fresh.stock
+      if (freshAvailable < qty) {
+        setActionError(freshAvailable > 0 ? `Only ${freshAvailable} available.` : 'This product option is out of stock.')
+        return
+      }
+      add(fresh.id, qty, selectedColor, selectedSize, fresh)
+      if (goToCheckout) {
+        nav('/checkout')
+        return
+      }
+      setAdded(true)
+      setTimeout(() => setAdded(false), 1600)
+    } catch (error) {
+      setActionError(errMsg(error, 'Could not refresh product stock.'))
+    } finally {
+      setActionBusy(false)
+    }
   }
 
-  if (!p) return <div className="card"><EmptyState title="Product not found" hint="It may have been removed." action={<button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-primary">Back to shop</button>} /></div>
+  const buy = () => addFreshProduct(true)
+  const cart = () => addFreshProduct(false)
+
+  if (!p && productLoading) return <div className="card p-8 text-center text-sm text-[var(--text-muted)]">Loading product details...</div>
+  if (!p || productError) return <div className="card"><EmptyState title="Product not found" hint="It may have been removed." action={<button onClick={() => (window.history.length > 1 ? nav(-1) : nav('/shop'))} className="btn btn-primary">Back to shop</button>} /></div>
 
   return (
     <div className="space-y-6">
@@ -291,16 +331,8 @@ export function Details() {
                 {selectedColor == null || selectedSize == null ? 'Select colour & size' : availableQty > 0 ? `${availableQty} available` : 'Out of stock'}
               </p>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                <button type="button" onClick={async () => {
-                    try {
-                      const fresh = await fetchProduct(p.id)
-                      mergeRows([fresh])
-                    } catch {}
-                    add(p.id, qty, selectedColor, selectedSize)
-                    setAdded(true)
-                    setTimeout(() => setAdded(false), 1600)
-                  }} disabled={!canAdd} className={`btn btn-secondary flex-1 !py-3 ${!canAdd ? 'opacity-50' : ''}`}><ShoppingCart className="h-4 w-4" /> {added ? 'Added ✓' : 'Choose options'}</button>
-                <button onClick={buy} disabled={!canAdd} className={`btn btn-primary flex-1 !py-3 ${!canAdd ? 'opacity-50' : ''}`}><Zap className="h-4 w-4" /> Buy now</button>
+                <button type="button" onClick={cart} disabled={!canAdd || actionBusy} className={`btn btn-secondary flex-1 !py-3 ${!canAdd || actionBusy ? 'opacity-50' : ''}`}><ShoppingCart className="h-4 w-4" /> {actionBusy ? 'Checking stock…' : added ? 'Added ✓' : 'Choose options'}</button>
+                <button onClick={buy} disabled={!canAdd || actionBusy} className={`btn btn-primary flex-1 !py-3 ${!canAdd || actionBusy ? 'opacity-50' : ''}`}><Zap className="h-4 w-4" /> Buy now</button>
               </div>
             </div>
           ) : (<>
@@ -314,10 +346,11 @@ export function Details() {
               <button onClick={() => toggleWish(p.id)} className={`btn ${loved ? 'bg-rose-50 text-rose-500' : 'btn-secondary'}`}><Heart className={`h-4 w-4 ${loved ? 'fill-rose-500' : ''}`} /> {loved ? 'Saved' : 'Wishlist'}</button>
             </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-              <button type="button" onClick={cart} disabled={!canAdd} className={`btn btn-secondary flex-1 !py-3 ${!canAdd ? 'opacity-50' : ''}`}><ShoppingCart className="h-4 w-4" /> {added ? 'Added ✓' : 'Add to cart'}</button>
-              <button onClick={buy} className="btn btn-primary flex-1 !py-3"><Zap className="h-4 w-4" /> Buy now</button>
+              <button type="button" onClick={cart} disabled={!canAdd || actionBusy} className={`btn btn-secondary flex-1 !py-3 ${!canAdd || actionBusy ? 'opacity-50' : ''}`}><ShoppingCart className="h-4 w-4" /> {actionBusy ? 'Checking stock…' : added ? 'Added ✓' : 'Add to cart'}</button>
+              <button onClick={buy} disabled={!canAdd || actionBusy} className="btn btn-primary flex-1 !py-3"><Zap className="h-4 w-4" /> Buy now</button>
             </div>
           </>)}
+          {actionError && <p className="mt-2 text-xs text-rose-600">{actionError}</p>}
           {added && <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-emerald-600"><CheckCircle2 className="h-4 w-4" /> Added to cart — <Link to="/cart" className="underline">view cart</Link></p>}
         </div>
       </div>

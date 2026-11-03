@@ -7,7 +7,7 @@ export type RazorpayPaymentResponse = {
 
 declare global {
   interface Window {
-    Razorpay?: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, cb: (resp: unknown) => void) => void }
+    Razorpay?: new (options: Record<string, unknown>) => { open: () => void; close: () => void; on: (event: string, cb: (resp: unknown) => void) => void }
   }
 }
 

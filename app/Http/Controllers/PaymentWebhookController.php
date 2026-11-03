@@ -1,29 +1,36 @@
 <?php
+
 namespace App\Http\Controllers;
+
 use App\Models\Credential;
 use App\Models\Order;
+use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 
-class PaymentWebhookController extends Controller {
+class PaymentWebhookController extends Controller
+{
     // Public Razorpay webhook - secret from credentials table
-    public function razorpay(Request $r){
+    public function razorpay(Request $r, OrderService $orders)
+    {
         $secret = '';
         if (Schema::hasTable('credentials')) {
             $row = Credential::query()->active()->razorpay()->first();
             $secret = $row?->api ?? '';
         }
-        $sig = $r->header('X-Razorpay-Signature','');
+        $sig = $r->header('X-Razorpay-Signature', '');
         $payload = $r->getContent();
         if ($secret === '') {
-            return response()->json(['message'=>'Razorpay webhook is not configured.'], 503);
+            return response()->json(['message' => 'Razorpay webhook is not configured.'], 503);
         }
         $expected = hash_hmac('sha256', $payload, $secret);
-        \Log::info('Razorpay webhook', ['valid'=>$sig===$expected,'event'=>json_decode($payload,true)['event']??null]);
-        if($sig===''||!hash_equals($expected,$sig)) return response()->json(['message'=>'Invalid signature'],400);
+        \Log::info('Razorpay webhook', ['valid' => $sig === $expected, 'event' => json_decode($payload, true)['event'] ?? null]);
+        if ($sig === '' || ! hash_equals($expected, $sig)) {
+            return response()->json(['message' => 'Invalid signature'], 400);
+        }
         $data = json_decode($payload, true) ?: [];
         $event = $data['event'] ?? 'unknown';
-        if (\Illuminate\Support\Facades\Schema::hasTable('payment_logs')) {
+        if (Schema::hasTable('payment_logs')) {
             \DB::table('payment_logs')->insert(['event' => $event, 'payload' => $payload, 'created_at' => now()]);
         }
 
@@ -40,13 +47,11 @@ class PaymentWebhookController extends Controller {
 
         if ($order) {
             if ($event === 'payment.captured') {
-                $order->update([
-                    'payment_status' => 'paid',
-                    'payment_ref' => $paymentId ?: $order->payment_ref,
-                    'paid_at' => $order->paid_at ?: now(),
-                ]);
+                if ($paymentId && $order->payment_status === 'pending') {
+                    $orders->confirmPayment($order, $paymentId);
+                }
             } elseif ($event === 'payment.failed') {
-                $order->update(['payment_status' => 'failed']);
+                $orders->releasePaymentReservation($order, 'failed');
             } elseif (str_contains($event, 'refund')) {
                 $order->update(['payment_status' => 'refunded']);
             }

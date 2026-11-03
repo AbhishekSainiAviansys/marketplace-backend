@@ -259,6 +259,7 @@ Route::prefix('v1')->group(function () {
             Route::get('products/{product}/stock', [StudentController::class, 'productStock'])->where('product', '[A-Za-z0-9_-]+');
             Route::post('payments/razorpay/order', [PaymentController::class, 'createOrder']);
             Route::post('payments/razorpay/verify', [PaymentController::class, 'verify']);
+            Route::post('payments/razorpay/cancel', [PaymentController::class, 'cancel']);
         });
         Route::prefix('school')->middleware('role:school')->group(function () {
             Route::get('products', [SchoolController::class, 'products']);

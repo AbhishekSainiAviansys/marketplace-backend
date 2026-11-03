@@ -1,5 +1,5 @@
 /** Cart page + order summary with free-pickup progress. */
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { ArrowRight, Heart, Minus, Plus, ShoppingCart, Trash2 } from 'lucide-react'
 import { EmptyState } from '@ui'
@@ -7,8 +7,9 @@ import { errMsg } from '@lib/api'
 import { cartGst, cartShipping, cartTotal, deliveryLabel, rupee, useShop } from '../store/shop'
 
 export function Cart() {
-  const { cartDetailed, setQty, remove, subTotal, mrpTotal, toggleWish, wish, couponCode, couponDiscount, applyCoupon, clearCoupon } = useShop()
+  const { cart, cartDetailed, setQty, remove, subTotal, mrpTotal, toggleWish, wish, couponCode, couponDiscount, applyCoupon, clearCoupon, refreshProducts } = useShop()
   const nav = useNavigate()
+  const [stockRefresh, setStockRefresh] = useState<'loading' | 'ready' | 'error'>('loading')
   const [couponInput, setCouponInput] = useState(couponCode ?? '')
   const [couponErr, setCouponErr] = useState('')
   const [couponBusy, setCouponBusy] = useState(false)
@@ -25,6 +26,22 @@ export function Cart() {
     const lineStock = hasVariants ? Number(lineVariant?.stock ?? 0) : p.stock
     return lineStock <= 0 || qty > lineStock
   })
+  const cartKey = [...new Set(cart.map((line) => line.id))].sort().join('|')
+  const refreshRef = useRef(refreshProducts)
+  refreshRef.current = refreshProducts
+
+  useEffect(() => {
+    if (!cartKey) {
+      setStockRefresh('ready')
+      return
+    }
+    let active = true
+    setStockRefresh('loading')
+    refreshRef.current(cartKey.split('|'))
+      .then(() => { if (active) setStockRefresh('ready') })
+      .catch(() => { if (active) setStockRefresh('error') })
+    return () => { active = false }
+  }, [cartKey])
 
   useEffect(() => { setCouponInput(couponCode ?? '') }, [couponCode])
   useEffect(() => {
@@ -103,6 +120,8 @@ export function Cart() {
             Some items are out of stock or exceed available stock. Update quantities before checkout.
           </p>
         )}
+        {stockRefresh === 'loading' && <p className="mt-2 text-xs text-[var(--text-muted)]">Checking current stock…</p>}
+        {stockRefresh === 'error' && <p className="mt-2 text-xs text-rose-700">Could not refresh stock. Reload the cart before checkout.</p>}
         <div className="mt-3">
           <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-3)]">
             <div className="accent-bg h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
@@ -142,7 +161,7 @@ export function Cart() {
           )}
           {couponErr && <p className="text-xs text-rose-600">{couponErr}</p>}
         </div>
-        <button onClick={() => nav('/checkout')} className="btn btn-primary mt-4 w-full !py-3" disabled={hasStockIssue}>Proceed to checkout <ArrowRight className="h-4 w-4" /></button>
+        <button onClick={() => nav('/checkout')} className="btn btn-primary mt-4 w-full !py-3" disabled={hasStockIssue || stockRefresh !== 'ready'}>Proceed to checkout <ArrowRight className="h-4 w-4" /></button>
         <Link to="/" className="mt-2 block text-center text-xs font-medium text-[var(--text-muted)] hover:underline">Continue shopping</Link>
       </aside>
     </div>

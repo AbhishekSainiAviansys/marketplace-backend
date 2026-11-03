@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Category;
 use App\Models\Product;
+use App\Models\ProductStock;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase;
@@ -58,6 +59,30 @@ class StorefrontCatalogTest extends TestCase
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
+        Schema::create('sub_categories', function ($t) {
+            $t->id();
+            $t->unsignedBigInteger('category_id');
+            $t->string('name', 120);
+            $t->string('slug')->nullable();
+            $t->boolean('is_active')->default(true);
+            $t->timestamps();
+        });
+        Schema::create('category_fields', function ($t) {
+            $t->id();
+            $t->unsignedBigInteger('category_id');
+            $t->string('field_name', 80);
+            $t->string('field_label', 120)->nullable();
+            $t->string('field_type', 20)->default('text');
+            $t->text('options')->nullable();
+            $t->boolean('is_required')->default(false);
+            $t->integer('sort_order')->default(0);
+        });
+        Schema::create('product_values', function ($t) {
+            $t->id();
+            $t->unsignedBigInteger('product_id');
+            $t->unsignedBigInteger('field_id');
+            $t->text('value_text')->nullable();
+        });
         Schema::create('product_variants', function ($t) {
             $t->id();
             $t->unsignedBigInteger('product_id');
@@ -72,6 +97,7 @@ class StorefrontCatalogTest extends TestCase
             $t->id();
             $t->string('product_code', 32)->nullable()->unique();
             $t->unsignedBigInteger('category_id');
+            $t->unsignedBigInteger('sub_category_id')->nullable();
             $t->string('created_by_type', 20);
             $t->unsignedBigInteger('created_by_id');
             $t->unsignedBigInteger('school_id')->nullable();
@@ -91,6 +117,18 @@ class StorefrontCatalogTest extends TestCase
             $t->unsignedBigInteger('product_id');
             $t->string('url', 500);
             $t->boolean('is_primary')->default(false);
+        });
+        Schema::create('product_stock', function ($t) {
+            $t->id();
+            $t->unsignedBigInteger('product_id');
+            $t->unsignedBigInteger('variant_id')->nullable();
+            $t->string('colour', 60)->nullable();
+            $t->string('color', 60)->nullable();
+            $t->string('size', 60)->nullable();
+            $t->integer('quantity')->default(0);
+            $t->integer('stock')->default(0);
+            $t->integer('qty')->default(0);
+            $t->timestamps();
         });
         Schema::create('settings', function ($t) {
             $t->string('key', 120)->primary();
@@ -139,6 +177,34 @@ class StorefrontCatalogTest extends TestCase
         $res->assertOk();
         $res->assertJsonStructure(['data', 'current_page', 'last_page', 'total']);
         $this->assertSame(1, $res->json('total'));
+    }
+
+    public function test_product_detail_resolves_product_code_and_returns_current_stock_rows(): void
+    {
+        $category = $this->makeCategory('Book', 'book');
+        $productId = $this->makeProduct($category, 'Shared Product');
+        $product = Product::findOrFail($productId);
+        ProductStock::create([
+            'product_id' => $product->id,
+            'quantity' => 3,
+            'stock' => 3,
+            'qty' => 3,
+        ]);
+
+        $this->getJson('/api/v1/products/'.$product->product_code)
+            ->assertOk()
+            ->assertJsonPath('product_code', $product->product_code)
+            ->assertJsonPath('product_stocks.0.quantity', 3);
+    }
+
+    public function test_product_detail_returns_not_found_for_inactive_product_code(): void
+    {
+        $category = $this->makeCategory('Book', 'book');
+        $productId = $this->makeProduct($category, 'Inactive Product');
+        $product = Product::findOrFail($productId);
+        $product->update(['is_active' => false]);
+
+        $this->getJson('/api/v1/products/'.$product->product_code)->assertNotFound();
     }
 
     /** ?ids= returns exactly the requested rows (boost/featured row). */
