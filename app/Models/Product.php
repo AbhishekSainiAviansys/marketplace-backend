@@ -1,22 +1,36 @@
 <?php
+
 namespace App\Models;
+
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
-class Product extends Model {
-    protected $fillable = ['product_code','category_id','sub_category_id','created_by_type','created_by_id','added_by_role','added_by_id','school_id','vendor_id','name','sku','price','mrp','delivery_charge','portal_charge','server_charge','stock','delivery_mode','payment_split','is_active','is_boost','boost_until'];
-    protected $hidden = ['id'];
-    protected $casts = ['payment_split'=>'array','is_active'=>'boolean','is_boost'=>'boolean','boost_until'=>'datetime'];
+class Product extends Model
+{
+    protected $fillable = ['product_code', 'category_id', 'sub_category_id', 'created_by_type', 'created_by_id', 'added_by_role', 'added_by_id', 'school_id', 'vendor_id', 'name', 'sku', 'price', 'mrp', 'delivery_charge', 'portal_charge', 'server_charge', 'stock', 'delivery_mode', 'payment_split', 'is_active', 'is_boost', 'boost_until'];
 
-    public function getProductCodeAttribute($value) {
-        if (!empty($value)) return $value;
-        if ($this->id) return 'PRD'.str_pad((string) $this->id, 6, '0', STR_PAD_LEFT);
+    protected $hidden = ['id'];
+
+    protected $casts = ['payment_split' => 'array', 'is_active' => 'boolean', 'is_variant' => 'boolean', 'is_boost' => 'boolean', 'boost_until' => 'datetime'];
+
+    public function getProductCodeAttribute($value)
+    {
+        if (! empty($value)) {
+            return $value;
+        }
+        if ($this->id) {
+            return 'PRD'.str_pad((string) $this->id, 6, '0', STR_PAD_LEFT);
+        }
+
         return null;
     }
 
-    protected static function booted(): void {
+    protected static function booted(): void
+    {
         static::created(function (self $product) {
-            if (!Schema::hasColumn('products', 'product_code')) return;
+            if (! Schema::hasColumn('products', 'product_code')) {
+                return;
+            }
             if (empty($product->getRawOriginal('product_code')) && empty($product->product_code)) {
                 // product_code accessor may be computed; check raw attribute
             }
@@ -27,15 +41,72 @@ class Product extends Model {
         });
     }
 
-    public function category(){ return $this->belongsTo(Category::class); }
-    public function subCategory(){ return $this->belongsTo(SubCategory::class); }
-    public function values(){ return $this->hasMany(ProductValue::class); }
-    public function images(){ return $this->hasMany(ProductImage::class); }
-    public function variants(){ return $this->hasMany(ProductVariant::class); }
-    public function productStock(){ return $this->hasMany(ProductStock::class); }
-    public function productStocks(){ return $this->hasMany(ProductStock::class); }
-    public function stocks(){ return $this->hasMany(ProductStock::class); }
-    public function stockTracking(){ return $this->hasMany(StockTracking::class); }
-    public function stockTrackings(){ return $this->hasMany(StockTracking::class); }
-}
+    public function category()
+    {
+        return $this->belongsTo(Category::class);
+    }
 
+    public function subCategory()
+    {
+        return $this->belongsTo(SubCategory::class);
+    }
+
+    public function values()
+    {
+        return $this->hasMany(ProductValue::class);
+    }
+
+    public function images()
+    {
+        return $this->hasMany(ProductImage::class);
+    }
+
+    public function variants()
+    {
+        return $this->hasMany(ProductVariant::class);
+    }
+
+    public function productStock()
+    {
+        return $this->hasMany(ProductStock::class);
+    }
+
+    public function productStocks()
+    {
+        return $this->hasMany(ProductStock::class);
+    }
+
+    public function stocks()
+    {
+        return $this->hasMany(ProductStock::class);
+    }
+
+    public function stockTracking()
+    {
+        return $this->hasMany(StockTracking::class);
+    }
+
+    public function stockTrackings()
+    {
+        return $this->hasMany(StockTracking::class);
+    }
+
+    public function reviews()
+    {
+        return $this->hasMany(ProductReview::class);
+    }
+
+    public function getVariantStockAttribute()
+    {
+        if ($this->is_variant) {
+            return $this->variants->sum('stock');
+        }
+
+        return (int) $this->stock;
+    }
+
+    public function getHasVariantsAttribute(): bool
+    {
+        return (bool) $this->is_variant;
+    }
+}

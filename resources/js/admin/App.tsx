@@ -20,6 +20,7 @@ import { StudentProfilePage } from './pages/StudentProfilePage'
 import { Categories } from './pages/Categories'
 import { Coupons } from './pages/Coupons'
 import { Products } from './pages/Products'
+import { ProductDetails } from './pages/ProductDetails'
 import { AppShell, icons, type NavItem } from '@ui'
 
 const ROLE = 'admin'
@@ -105,6 +106,7 @@ else if (pathname === '/products') page = <Products />
   else if (pathname === '/schools/profile') page = <SchoolProfilePage />
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
   else if (/^\/products\/[A-Za-z0-9\-]+\/edit$/.test(pathname)) page = <ProductForm prefix={PREFIX} id={pathname.split('/')[2]} />
+  else if (/^\/products\/[A-Za-z0-9\-]+$/.test(pathname)) page = <ProductDetails id={pathname.split('/')[2]} />
   else if (pathname === '/home-content') page = <HomeContent />
   else if (pathname === '/pages-footer') page = <SitePages />
   else if (pathname === '/settings') page = <Settings />

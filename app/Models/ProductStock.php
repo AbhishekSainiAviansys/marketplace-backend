@@ -13,6 +13,7 @@ class ProductStock extends Model
         'variant_id',
         'colour',
         'color',
+        'color_code',
         'size',
         'quantity',
         'stock',

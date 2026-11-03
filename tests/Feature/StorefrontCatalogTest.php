@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Models\Category;
+use App\Models\Product;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\Schema;
@@ -27,42 +30,73 @@ class StorefrontCatalogTest extends TestCase
         parent::setUp();
 
         Schema::create('users', function ($t) {
-            $t->id(); $t->string('name', 150);
+            $t->id();
+            $t->string('name', 150);
             $t->string('email')->nullable()->unique();
             $t->string('whatsapp', 20)->nullable()->unique();
-            $t->string('password'); $t->string('role', 20)->default('vendor');
+            $t->string('password');
+            $t->string('role', 20)->default('vendor');
             $t->boolean('is_active')->default(true);
-            $t->rememberToken(); $t->timestamps();
+            $t->rememberToken();
+            $t->timestamps();
         });
         Schema::create('personal_access_tokens', function ($t) {
-            $t->id(); $t->morphs('tokenable'); $t->string('name');
-            $t->string('token', 64)->unique(); $t->text('abilities')->nullable();
-            $t->timestamp('last_used_at')->nullable(); $t->timestamp('expires_at')->nullable();
+            $t->id();
+            $t->morphs('tokenable');
+            $t->string('name');
+            $t->string('token', 64)->unique();
+            $t->text('abilities')->nullable();
+            $t->timestamp('last_used_at')->nullable();
+            $t->timestamp('expires_at')->nullable();
             $t->timestamps();
         });
         Schema::create('categories', function ($t) {
-            $t->id(); $t->string('name', 120); $t->string('slug')->unique();
-            $t->text('description')->nullable(); $t->boolean('is_active')->default(true);
+            $t->id();
+            $t->string('name', 120);
+            $t->string('slug')->unique();
+            $t->text('description')->nullable();
+            $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
+        Schema::create('product_variants', function ($t) {
+            $t->id();
+            $t->unsignedBigInteger('product_id');
+            $t->string('size', 60)->nullable();
+            $t->string('color', 60)->nullable();
+            $t->string('sku', 60)->nullable();
+            $t->decimal('price', 10, 2)->nullable();
+            $t->integer('stock')->default(0);
+        });
+
         Schema::create('products', function ($t) {
-            $t->id(); $t->string('product_code',32)->nullable()->unique(); $t->unsignedBigInteger('category_id');
-            $t->string('created_by_type', 20); $t->unsignedBigInteger('created_by_id');
-            $t->unsignedBigInteger('school_id')->nullable(); $t->unsignedBigInteger('vendor_id')->nullable();
-            $t->string('name'); $t->string('sku', 60)->nullable()->unique();
-            $t->decimal('price', 10, 2); $t->decimal('mrp', 10, 2)->nullable();
+            $t->id();
+            $t->string('product_code', 32)->nullable()->unique();
+            $t->unsignedBigInteger('category_id');
+            $t->string('created_by_type', 20);
+            $t->unsignedBigInteger('created_by_id');
+            $t->unsignedBigInteger('school_id')->nullable();
+            $t->unsignedBigInteger('vendor_id')->nullable();
+            $t->string('name');
+            $t->string('sku', 60)->nullable()->unique();
+            $t->decimal('price', 10, 2);
+            $t->decimal('mrp', 10, 2)->nullable();
             $t->integer('stock')->default(0);
             $t->string('delivery_mode', 20)->default('self');
-            $t->text('payment_split')->nullable(); $t->boolean('is_active')->default(true);
+            $t->text('payment_split')->nullable();
+            $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
         Schema::create('product_images', function ($t) {
-            $t->id(); $t->unsignedBigInteger('product_id');
-            $t->string('url', 500); $t->boolean('is_primary')->default(false);
+            $t->id();
+            $t->unsignedBigInteger('product_id');
+            $t->string('url', 500);
+            $t->boolean('is_primary')->default(false);
         });
         Schema::create('settings', function ($t) {
-            $t->string('key', 120)->primary(); $t->text('value')->nullable();
-            $t->string('group', 60)->default('general'); $t->boolean('is_secret')->default(false);
+            $t->string('key', 120)->primary();
+            $t->text('value')->nullable();
+            $t->string('group', 60)->default('general');
+            $t->boolean('is_secret')->default(false);
         });
     }
 
@@ -78,17 +112,18 @@ class StorefrontCatalogTest extends TestCase
             'name' => 'Admin', 'email' => 'admin@test.local',
             'password' => bcrypt('secret'), 'role' => 'admin', 'is_active' => true,
         ]);
+
         return $u->createToken('test')->plainTextToken;
     }
 
     private function makeCategory(string $name, string $slug): int
     {
-        return \App\Models\Category::create(['name' => $name, 'slug' => $slug])->id;
+        return Category::create(['name' => $name, 'slug' => $slug])->id;
     }
 
     private function makeProduct(int $catId, string $name): int
     {
-        return \App\Models\Product::create([
+        return Product::create([
             'category_id' => $catId, 'created_by_type' => 'admin', 'created_by_id' => 1,
             'name' => $name, 'price' => 100, 'mrp' => 150, 'stock' => 5, 'is_active' => true,
         ])->id;
@@ -148,12 +183,12 @@ class StorefrontCatalogTest extends TestCase
     /** /settings/public ships admin-edited home content (no auth). */
     public function test_settings_public_exposes_home_content(): void
     {
-        \App\Models\Setting::create([
+        Setting::create([
             'key' => 'home_content',
             'value' => json_encode(['hero' => ['badge' => 'Sale week'], 'ticker' => ['Flat 20% off']]),
             'group' => 'home',
         ]);
-        \App\Models\Setting::create([
+        Setting::create([
             'key' => 'home_boost_ids', 'value' => json_encode([7, 8]), 'group' => 'home',
         ]);
 
@@ -186,17 +221,17 @@ class StorefrontCatalogTest extends TestCase
     /** /settings/public ships admin-managed pages, contact + socials (no auth). */
     public function test_settings_public_exposes_site_pages_contact_socials(): void
     {
-        \App\Models\Setting::create([
+        Setting::create([
             'key' => 'site_pages',
             'value' => json_encode(['privacy' => ['title' => 'Privacy Policy', 'body' => 'We respect you.']]),
             'group' => 'site',
         ]);
-        \App\Models\Setting::create([
+        Setting::create([
             'key' => 'contact_info',
             'value' => json_encode(['phone' => '+91 111', 'email' => 'a@b.c', 'address' => 'Road', 'hours' => '9-5']),
             'group' => 'site',
         ]);
-        \App\Models\Setting::create([
+        Setting::create([
             'key' => 'social_links',
             'value' => json_encode([['network' => 'Instagram', 'url' => 'https://instagram.com/x']]),
             'group' => 'site',

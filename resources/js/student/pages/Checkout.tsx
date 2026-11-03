@@ -17,7 +17,12 @@ export function Checkout() {
   const [doneId, setDoneId] = useState('')
   const [err, setErr] = useState('')
   const [paying, setPaying] = useState(false)
-  const hasStockIssue = cartDetailed.some(({ p, qty }) => p.stock <= 0 || qty > p.stock)
+  const hasStockIssue = cartDetailed.some(({ p, qty, color, size }) => {
+    const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
+    const variant = hasVariants ? (p.variants ?? []).find((row) => row.color === color && row.size === size) : undefined
+    const available = hasVariants ? Number(variant?.stock ?? 0) : p.stock
+    return available <= 0 || qty > available
+  })
   const ship = cartShipping(mode === 'pickup' ? 'pickup' : 'home', cartDetailed)
   const total = subTotal + ship
 

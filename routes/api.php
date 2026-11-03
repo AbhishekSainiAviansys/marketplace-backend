@@ -1,28 +1,28 @@
 <?php
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\AdminController;
-use App\Http\Controllers\VendorController;
-use App\Http\Controllers\SchoolController;
-use App\Http\Controllers\CommonController;
-use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\SettingController;
-use App\Http\Controllers\LocationController;
-use App\Http\Controllers\AddressController;
-use App\Http\Controllers\PaymentWebhookController;
-use App\Http\Controllers\VendorOnboardingController;
-use App\Http\Controllers\SchoolOnboardingController;
-use App\Http\Controllers\CoachingController;
-use App\Http\Controllers\CredentialController;
-use App\Http\Controllers\PaymentController;
-use App\Http\Controllers\OrderLedgerController;
-use App\Http\Controllers\StudentController;
-use App\Http\Controllers\CouponController;
-use App\Http\Controllers\DirectoryController;
-use App\Http\Controllers\EnquiryController;
-use App\Http\Controllers\InvoiceController;
 
-Route::get('health', fn()=>response()->json(['ok'=>true,'service'=>'marketplace-api']));
+use App\Http\Controllers\AddressController;
+use App\Http\Controllers\AdminController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CoachingController;
+use App\Http\Controllers\CommonController;
+use App\Http\Controllers\CouponController;
+use App\Http\Controllers\CredentialController;
+use App\Http\Controllers\DirectoryController;
+use App\Http\Controllers\InvoiceController;
+use App\Http\Controllers\LocationController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\OrderLedgerController;
+use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\SchoolController;
+use App\Http\Controllers\SchoolOnboardingController;
+use App\Http\Controllers\SettingController;
+use App\Http\Controllers\StudentController;
+use App\Http\Controllers\VendorController;
+use App\Http\Controllers\VendorOnboardingController;
+use Illuminate\Support\Facades\Route;
+
+Route::get('health', fn () => response()->json(['ok' => true, 'service' => 'marketplace-api']));
 
 Route::prefix('v1')->group(function () {
     Route::post('auth/register', [AuthController::class, 'register']);
@@ -93,7 +93,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('coaching/{id}', [CoachingController::class, 'coachingDestroy']);
             Route::post('coaching/{id}/review', [CoachingController::class, 'coachingReview']);
             // route aliases
-            foreach (['coaching-institutes','coachings','institutes'] as $alias) {
+            foreach (['coaching-institutes', 'coachings', 'institutes'] as $alias) {
                 Route::get($alias.'/stats', [CoachingController::class, 'coachingStats']);
                 Route::get($alias, [CoachingController::class, 'coachingIndex']);
                 Route::get($alias.'/{id}', [CoachingController::class, 'coachingShow']);
@@ -136,7 +136,7 @@ Route::prefix('v1')->group(function () {
             Route::get('orders', [OrderLedgerController::class, 'index']);
             Route::get('order-ledger', [OrderLedgerController::class, 'index']);
             Route::get('ledger', [OrderLedgerController::class, 'index']);
-Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
+            Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
             Route::get('orders/{id}', [OrderLedgerController::class, 'show']);
             Route::patch('orders/{id}', [OrderLedgerController::class, 'update']);
             Route::put('orders/{id}', [OrderLedgerController::class, 'update']);
@@ -176,17 +176,17 @@ Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
             Route::put('details', [CoachingController::class, 'updateDetails']);
             // Per-row add/update/delete (same tables the bulk PUT covers).
             Route::post('courses', [CoachingController::class, 'courseStore']);
-            Route::put('courses/{id}', [CoachingController::class, 'courseUpdate'])->where('id','[0-9]+');
-            Route::delete('courses/{id}', [CoachingController::class, 'courseDestroy'])->where('id','[0-9]+');
+            Route::put('courses/{id}', [CoachingController::class, 'courseUpdate'])->where('id', '[0-9]+');
+            Route::delete('courses/{id}', [CoachingController::class, 'courseDestroy'])->where('id', '[0-9]+');
             Route::post('education', [CoachingController::class, 'educationStore']);
-            Route::put('education/{id}', [CoachingController::class, 'educationUpdate'])->where('id','[0-9]+');
-            Route::delete('education/{id}', [CoachingController::class, 'educationDestroy'])->where('id','[0-9]+');
+            Route::put('education/{id}', [CoachingController::class, 'educationUpdate'])->where('id', '[0-9]+');
+            Route::delete('education/{id}', [CoachingController::class, 'educationDestroy'])->where('id', '[0-9]+');
             Route::post('portfolio', [CoachingController::class, 'portfolioStore']);
-            Route::put('portfolio/{id}', [CoachingController::class, 'portfolioUpdate'])->where('id','[0-9]+');
-            Route::delete('portfolio/{id}', [CoachingController::class, 'portfolioDestroy'])->where('id','[0-9]+');
+            Route::put('portfolio/{id}', [CoachingController::class, 'portfolioUpdate'])->where('id', '[0-9]+');
+            Route::delete('portfolio/{id}', [CoachingController::class, 'portfolioDestroy'])->where('id', '[0-9]+');
             Route::post('portfolio/upload', [CoachingController::class, 'portfolioUpload']);
             Route::post('branding/upload', [CoachingController::class, 'brandingUpload']);
-            Route::delete('branding/{type}', [CoachingController::class, 'brandingDestroy'])->where('type','logo|banner');
+            Route::delete('branding/{type}', [CoachingController::class, 'brandingDestroy'])->where('type', 'logo|banner');
         });
         Route::prefix('school')->middleware('role:school')->group(function () {
             // Onboarding endpoints stay reachable pre-approval; everything else gets 'approved'.
@@ -205,50 +205,69 @@ Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
                 Route::put('details', [SchoolController::class, 'updateDetails']);
                 // Per-row add/update/delete (same tables the bulk PUT covers).
                 Route::post('courses', [SchoolController::class, 'courseStore']);
-                Route::put('courses/{id}', [SchoolController::class, 'courseUpdate'])->where('id','[0-9]+');
-                Route::delete('courses/{id}', [SchoolController::class, 'courseDestroy'])->where('id','[0-9]+');
+                Route::put('courses/{id}', [SchoolController::class, 'courseUpdate'])->where('id', '[0-9]+');
+                Route::delete('courses/{id}', [SchoolController::class, 'courseDestroy'])->where('id', '[0-9]+');
                 Route::post('education', [SchoolController::class, 'educationStore']);
-                Route::put('education/{id}', [SchoolController::class, 'educationUpdate'])->where('id','[0-9]+');
-                Route::delete('education/{id}', [SchoolController::class, 'educationDestroy'])->where('id','[0-9]+');
+                Route::put('education/{id}', [SchoolController::class, 'educationUpdate'])->where('id', '[0-9]+');
+                Route::delete('education/{id}', [SchoolController::class, 'educationDestroy'])->where('id', '[0-9]+');
                 Route::post('portfolio', [SchoolController::class, 'portfolioStore']);
-                Route::put('portfolio/{id}', [SchoolController::class, 'portfolioUpdate'])->where('id','[0-9]+');
-                Route::delete('portfolio/{id}', [SchoolController::class, 'portfolioDestroy'])->where('id','[0-9]+');
+                Route::put('portfolio/{id}', [SchoolController::class, 'portfolioUpdate'])->where('id', '[0-9]+');
+                Route::delete('portfolio/{id}', [SchoolController::class, 'portfolioDestroy'])->where('id', '[0-9]+');
                 Route::post('portfolio/upload', [SchoolController::class, 'portfolioUpload']);
                 Route::post('branding/upload', [SchoolController::class, 'brandingUpload']);
-                Route::delete('branding/{type}', [SchoolController::class, 'brandingDestroy'])->where('type','logo|banner');
+                Route::delete('branding/{type}', [SchoolController::class, 'brandingDestroy'])->where('type', 'logo|banner');
             });
         });
-    Route::prefix('student')->middleware('role:student')->group(function () {
-        Route::get('orders', [StudentController::class, 'orders']);
-        Route::get('profile', [StudentController::class, 'profile']);
-        Route::put('profile', [StudentController::class, 'profileUpdate']);
-        Route::patch('profile', [StudentController::class, 'profileUpdate']);
-        Route::post('profile', [StudentController::class, 'profileUpdate']);
-        Route::get('profile/update', [StudentController::class, 'profile']);
-        Route::put('profile/update', [StudentController::class, 'profileUpdate']);
-        Route::patch('profile/update', [StudentController::class, 'profileUpdate']);
-        Route::post('profile/update', [StudentController::class, 'profileUpdate']);
-        Route::get('profile/details', [StudentController::class, 'profile']);
-        Route::put('profile/details', [StudentController::class, 'profileUpdate']);
-        Route::patch('profile/details', [StudentController::class, 'profileUpdate']);
-        Route::post('profile/details', [StudentController::class, 'profileUpdate']);
-        Route::get('addresses', [AddressController::class, 'index']);
-        Route::post('addresses', [AddressController::class, 'store']);
-        Route::delete('addresses/{id}', [AddressController::class, 'destroy']);
-        Route::get('orders/{order}/invoice', [InvoiceController::class, 'student']);
-        Route::get('orders/{order}', [StudentController::class, 'orderShow']);
-        Route::post('orders', [StudentController::class, 'orderStore']);
-        Route::get('cart', [StudentController::class, 'cartIndex']);
-        Route::post('cart/items', [StudentController::class, 'cartAdd']);
-        Route::patch('cart/items/{product}', [StudentController::class, 'cartUpdate'])->where('product','[A-Za-z0-9_-]+');
-        Route::delete('cart/items/{product}', [StudentController::class, 'cartRemove'])->where('product','[A-Za-z0-9_-]+');
-        Route::delete('cart', [StudentController::class, 'cartClear']);
-        Route::post('coupons/validate', [StudentController::class, 'couponValidate']);
-        Route::get('wishlist', [StudentController::class, 'wishlistIndex']);
-        Route::post('wishlist/{product}', [StudentController::class, 'wishlistAdd'])->where('product','[A-Za-z0-9_-]+');
-        Route::delete('wishlist/{product}', [StudentController::class, 'wishlistRemove'])->where('product','[A-Za-z0-9_-]+');
-        Route::post('payments/razorpay/order', [PaymentController::class, 'createOrder']);
-        Route::post('payments/razorpay/verify', [PaymentController::class, 'verify']);
+        // Admin: Manage product reviews per order
+        Route::prefix('admin')->middleware('role:admin')->group(function () {
+            Route::get('orders/{order}/reviews', [AdminController::class, 'orderReviews']);
+            Route::post('orders/{order}/reviews', [AdminController::class, 'storeReview']);
+            Route::put('orders/{order}/reviews/{review}', [AdminController::class, 'updateReview']);
+            Route::delete('orders/{order}/reviews/{review}', [AdminController::class, 'destroyReview']);
+        });
+        Route::prefix('student')->middleware('role:student')->group(function () {
+            Route::get('orders', [StudentController::class, 'orders']);
+            Route::get('profile', [StudentController::class, 'profile']);
+            Route::put('profile', [StudentController::class, 'profileUpdate']);
+            Route::patch('profile', [StudentController::class, 'profileUpdate']);
+            Route::post('profile', [StudentController::class, 'profileUpdate']);
+            Route::get('profile/update', [StudentController::class, 'profile']);
+            Route::put('profile/update', [StudentController::class, 'profileUpdate']);
+            Route::patch('profile/update', [StudentController::class, 'profileUpdate']);
+            Route::post('profile/update', [StudentController::class, 'profileUpdate']);
+            Route::get('profile/details', [StudentController::class, 'profile']);
+            Route::put('profile/details', [StudentController::class, 'profileUpdate']);
+            Route::patch('profile/details', [StudentController::class, 'profileUpdate']);
+            Route::post('profile/details', [StudentController::class, 'profileUpdate']);
+            Route::get('addresses', [AddressController::class, 'index']);
+            Route::post('addresses', [AddressController::class, 'store']);
+            Route::delete('addresses/{id}', [AddressController::class, 'destroy']);
+            Route::get('orders/{order}/invoice', [InvoiceController::class, 'student']);
+            Route::get('orders/{order}', [StudentController::class, 'orderShow']);
+            Route::post('orders', [StudentController::class, 'orderStore']);
+            Route::get('cart', [StudentController::class, 'cartIndex']);
+            Route::post('cart/items', [StudentController::class, 'cartAdd']);
+            Route::patch('cart/items/{product}', [StudentController::class, 'cartUpdate'])->where('product', '[A-Za-z0-9_-]+');
+            Route::delete('cart/items/{product}', [StudentController::class, 'cartRemove'])->where('product', '[A-Za-z0-9_-]+');
+            Route::delete('cart', [StudentController::class, 'cartClear']);
+            Route::post('coupons/validate', [StudentController::class, 'couponValidate']);
+            Route::get('wishlist', [StudentController::class, 'wishlistIndex']);
+            Route::post('wishlist/{product}', [StudentController::class, 'wishlistAdd'])->where('product', '[A-Za-z0-9_-]+');
+            Route::delete('wishlist/{product}', [StudentController::class, 'wishlistRemove'])->where('product', '[A-Za-z0-9_-]+');
+            Route::get('products/{product}/reviews', [StudentController::class, 'indexReviews'])->where('product', '[A-Za-z0-9_-]+');
+            Route::post('products/{product}/reviews', [StudentController::class, 'storeReview'])->where('product', '[A-Za-z0-9_-]+');
+            Route::get('products/{product}/stock', [StudentController::class, 'productStock'])->where('product', '[A-Za-z0-9_-]+');
+            Route::post('payments/razorpay/order', [PaymentController::class, 'createOrder']);
+            Route::post('payments/razorpay/verify', [PaymentController::class, 'verify']);
+        });
+        Route::prefix('school')->middleware('role:school')->group(function () {
+            Route::get('products', [SchoolController::class, 'products']);
+            Route::get('products/{id}', [SchoolController::class, 'productShow']);
+            Route::post('orders', [SchoolController::class, 'orderStore']);
+            Route::get('order-ledger', [SchoolController::class, 'orderLedger']);
+        });
+
+        Route::post('school/connect-vendor', [SchoolController::class, 'connectVendor']);
 
         // Profile photo endpoints (multiple aliases for compatibility).
         foreach (['profile/photo', 'profile/avatar', 'profile/picture', 'profile/image', 'profile/pic', 'avatar', 'photo', 'picture', 'image', 'profile-photo', 'profile_avatar'] as $uri) {
@@ -258,5 +277,4 @@ Route::get('orders/{id}/invoice', [InvoiceController::class, 'admin']);
             Route::delete($uri, [StudentController::class, 'profilePhotoDestroy']);
         }
     });
-});
 });

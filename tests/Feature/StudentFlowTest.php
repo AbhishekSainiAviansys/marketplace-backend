@@ -1,12 +1,16 @@
 <?php
+
 namespace Tests\Feature;
 
+use App\Models\Product;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase;
 use Illuminate\Support\Facades\Schema;
 
-class StudentFlowTest extends TestCase {
-    protected function setUp(): void {
+class StudentFlowTest extends TestCase
+{
+    protected function setUp(): void
+    {
         parent::setUp();
         Schema::create('users', function ($t) {
             $t->id();
@@ -53,6 +57,17 @@ class StudentFlowTest extends TestCase {
             $t->boolean('is_read')->default(false);
             $t->timestamps();
         });
+        Schema::create('product_stock', function ($t) {
+            $t->id();
+            $t->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $t->string('colour', 60)->nullable();
+            $t->string('color', 60)->nullable();
+            $t->string('size', 60)->nullable();
+            $t->integer('quantity')->default(0);
+            $t->integer('stock')->default(0);
+            $t->integer('qty')->default(0);
+            $t->timestamps();
+        });
         Schema::create('orders', function ($t) {
             $t->id();
             $t->foreignId('user_id')->constrained()->cascadeOnDelete();
@@ -72,7 +87,8 @@ class StudentFlowTest extends TestCase {
             $t->timestamps();
         });
         Schema::create('products', function ($t) {
-            $t->id(); $t->string('product_code',32)->nullable()->unique();
+            $t->id();
+            $t->string('product_code', 32)->nullable()->unique();
             $t->string('name', 150);
             $t->integer('stock')->default(0);
             $t->boolean('is_active')->default(true);
@@ -88,9 +104,12 @@ class StudentFlowTest extends TestCase {
             $t->id();
             $t->foreignId('cart_id')->constrained()->cascadeOnDelete();
             $t->foreignId('product_id')->constrained()->cascadeOnDelete();
+            $t->string('color', 60)->nullable();
+            $t->string('size', 60)->nullable();
+            $t->string('option_key', 64)->default('default');
             $t->unsignedInteger('qty')->default(1);
             $t->timestamps();
-            $t->unique(['cart_id', 'product_id']);
+            $t->unique(['cart_id', 'product_id', 'option_key']);
         });
         Schema::create('wishlist_items', function ($t) {
             $t->id();
@@ -101,12 +120,15 @@ class StudentFlowTest extends TestCase {
         });
 
     }
-    protected function tearDown(): void {
+
+    protected function tearDown(): void
+    {
         Schema::dropAllTables();
         parent::tearDown();
     }
 
-    public function test_student_registration_order_and_admin_visibility(): void {
+    public function test_student_registration_order_and_admin_visibility(): void
+    {
         $reg = $this->postJson('/api/v1/auth/register', [
             'name' => 'Test Student',
             'email' => 'student@test.local',
@@ -122,7 +144,7 @@ class StudentFlowTest extends TestCase {
 
         $orderRes = $this->actingAs($studentUser, 'sanctum')
             ->postJson('/api/v1/student/orders', [
-                'items' => [['name'=>'Book','qty'=>2,'price'=>100]],
+                'items' => [['name' => 'Book', 'qty' => 2, 'price' => 100]],
                 'total' => 200,
                 'pay_mode' => 'COD',
                 'delivery' => 'pickup',
@@ -131,7 +153,7 @@ class StudentFlowTest extends TestCase {
         $orderRes->assertCreated();
         $this->assertSame('Placed', $orderRes->json('status'));
 
-        $adminUser = User::create(['name'=>'Admin','email'=>'admin@test.local','password'=>bcrypt('secret'),'role'=>'admin','is_active'=>true]);
+        $adminUser = User::create(['name' => 'Admin', 'email' => 'admin@test.local', 'password' => bcrypt('secret'), 'role' => 'admin', 'is_active' => true]);
 
         $list = $this->actingAs($adminUser, 'sanctum')
             ->getJson('/api/v1/admin/students?search=Test Student');
@@ -151,24 +173,25 @@ class StudentFlowTest extends TestCase {
             ->assertForbidden();
 
         $this->actingAs($adminUser, 'sanctum')
-            ->postJson('/api/v1/student/orders', ['items'=>[['name'=>'x','qty'=>1,'price'=>1]],'total'=>1])
+            ->postJson('/api/v1/student/orders', ['items' => [['name' => 'x', 'qty' => 1, 'price' => 1]], 'total' => 1])
             ->assertForbidden();
     }
 
-    public function test_cart_wishlist_and_stock_validation(): void {
-        $student = User::create(['name'=>'Stu','email'=>'stu@test.local','password'=>bcrypt('secret'),'role'=>'student','is_active'=>true]);
-        $product = \App\Models\Product::create(['name'=>'Book','stock'=>5,'is_active'=>true]);
+    public function test_cart_wishlist_and_stock_validation(): void
+    {
+        $student = User::create(['name' => 'Stu', 'email' => 'stu@test.local', 'password' => bcrypt('secret'), 'role' => 'student', 'is_active' => true]);
+        $product = Product::create(['name' => 'Book', 'stock' => 5, 'is_active' => true]);
 
         $this->actingAs($student, 'sanctum')
-            ->postJson('/api/v1/student/cart/items', ['product_id'=>$product->id, 'qty'=>2])
+            ->postJson('/api/v1/student/cart/items', ['product_id' => $product->id, 'qty' => 2])
             ->assertCreated();
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/cart')
             ->assertOk()
-            ->assertJsonFragment(['product_code'=>(string)$product->product_code, 'qty'=>2]);
+            ->assertJsonFragment(['product_code' => (string) $product->product_code, 'qty' => 2]);
 
         $this->actingAs($student, 'sanctum')
-            ->patchJson('/api/v1/student/cart/items/'.$product->id, ['qty'=>10])
+            ->patchJson('/api/v1/student/cart/items/'.$product->id, ['qty' => 10])
             ->assertStatus(422);
 
         $this->actingAs($student, 'sanctum')
@@ -177,17 +200,17 @@ class StudentFlowTest extends TestCase {
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/wishlist')
             ->assertOk()
-            ->assertJsonFragment([(string)$product->product_code]);
+            ->assertJsonFragment([(string) $product->product_code]);
 
         // checkout validates stock and decrements
         $this->actingAs($student, 'sanctum')
             ->postJson('/api/v1/student/orders', [
-                'items' => [['id'=>$product->id, 'name'=>'Book', 'qty'=>2, 'price'=>100]],
+                'items' => [['id' => $product->id, 'name' => 'Book', 'qty' => 2, 'price' => 100]],
                 'total' => 200,
             ])
             ->assertCreated();
 
-        $this->assertSame(3, \App\Models\Product::find($product->id)->stock);
+        $this->assertSame(3, Product::find($product->id)->stock);
 
         $this->actingAs($student, 'sanctum')
             ->getJson('/api/v1/student/cart')
@@ -195,4 +218,3 @@ class StudentFlowTest extends TestCase {
             ->assertJsonCount(0);
     }
 }
-

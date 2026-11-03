@@ -2,22 +2,31 @@
 
 namespace App\Services;
 
+use App\Http\Controllers\NotificationController;
 use App\Models\Cart;
-use App\Models\CartItem;
+use App\Models\CouponUsage;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class OrderService
 {
     private function findProduct($key, bool $lock = false): ?Product
     {
-        if ($key === null || $key === '') return null;
+        if ($key === null || $key === '') {
+            return null;
+        }
         $q = Product::query();
-        if ($lock) $q->lockForUpdate();
-        if (is_numeric($key)) return $q->find($key);
+        if ($lock) {
+            $q->lockForUpdate();
+        }
+        if (is_numeric($key)) {
+            return $q->find($key);
+        }
+
         return $q->where('product_code', (string) $key)->first();
     }
 
@@ -27,7 +36,7 @@ class OrderService
      *
      * @param  array  $data  Validated order payload (items, total, pay_mode, ...)
      * @param  array  $payment  Optional payment metadata:
-     *     payment_status, payment_provider, provider_order_id, payment_ref, paid_at, status
+     *                          payment_status, payment_provider, provider_order_id, payment_ref, paid_at, status
      */
     public function create(User $u, array $data, array $payment = []): Order
     {
@@ -51,16 +60,23 @@ class OrderService
             $data['items'] = $normalized;
 
             foreach ($data['items'] as $it) {
-                if (empty($it['product_code'])) continue;
+                if (empty($it['product_code'])) {
+                    continue;
+                }
                 $product = $this->findProduct($it['product_code'], true);
-                if (!$product || !$product->is_active) {
+                if (! $product || ! $product->is_active) {
                     abort(422, 'A product in your cart is no longer available.');
                 }
                 $qty = (int) ($it['qty'] ?? 1);
-                if ($product->stock < $qty) {
-                    abort(422, 'Insufficient stock for '.$product->name.'. Only '.$product->stock.' left.');
+                $inventory = app(ProductStockService::class);
+                $color = isset($it['color']) ? (string) $it['color'] : null;
+                $size = isset($it['size']) ? (string) $it['size'] : null;
+                $hasVariants = $inventory->hasVariants($product);
+                if ($hasVariants && ($color === null || $size === null)) {
+                    abort(422, 'Choose a colour and size for '.$product->name.'.');
                 }
-                $product->decrement('stock', $qty);
+                $stockRecord = $inventory->findStockRecord($product, $color, $size, true);
+                $inventory->decrementForOrder($product, $stockRecord, $qty, $color, $size, $hasVariants);
 
                 if ($product->created_by_type === 'admin' || $product->added_by_role === 'admin') {
                     $notifyAdmin = true;
@@ -74,9 +90,11 @@ class OrderService
             foreach ($data['items'] as $it) {
                 $qty = max(1, (int) ($it['qty'] ?? 1));
                 $price = (float) ($it['price'] ?? 0);
-                if (empty($it['price']) && !empty($it['product_code'])) {
+                if (empty($it['price']) && ! empty($it['product_code'])) {
                     $product = $this->findProduct($it['product_code']);
-                    if ($product) $price = (float) $product->price;
+                    if ($product) {
+                        $price = (float) $product->price;
+                    }
                 }
                 $subtotal += $qty * $price;
             }
@@ -88,7 +106,7 @@ class OrderService
                 $productDelivery = 0.0;
                 $hasExplicit = false;
                 foreach ($data['items'] as $it) {
-                    if (!empty($it['product_code'])) {
+                    if (! empty($it['product_code'])) {
                         $product = $this->findProduct($it['product_code']);
                         if ($product && $product->delivery_charge !== null) {
                             $hasExplicit = true;
@@ -105,7 +123,7 @@ class OrderService
                 $productDelivery = 0.0;
                 $hasExplicit = false;
                 foreach ($data['items'] as $it) {
-                    if (!empty($it['product_code'])) {
+                    if (! empty($it['product_code'])) {
                         $product = $this->findProduct($it['product_code']);
                         if ($product && $product->delivery_charge !== null) {
                             $hasExplicit = true;
@@ -123,18 +141,19 @@ class OrderService
             $gstRate = 18.0;
             $gst = round(($subtotal + $delivery) * ($gstRate / 100), 2);
 
-            $couponCode = !empty($data['coupon_code']) ? strtoupper(trim((string) $data['coupon_code'])) : null;
+            $couponCode = ! empty($data['coupon_code']) ? strtoupper(trim((string) $data['coupon_code'])) : null;
             $coupon = null;
             $couponDiscount = 0.0;
             if ($couponCode) {
-                $res = (new \App\Services\CouponService())->validateCode($couponCode, $u, $subtotal);
+                $res = (new CouponService)->validateCode($couponCode, $u, $subtotal);
                 $coupon = $res['coupon'];
                 $couponDiscount = (float) $res['discount_amount'];
             }
 
             $grandTotal = round($subtotal + $delivery + $gst - $couponDiscount, 2);
-            if ($grandTotal < 0) $grandTotal = 0;
-
+            if ($grandTotal < 0) {
+                $grandTotal = 0;
+            }
 
             $payload = array_merge([
                 'user_id' => $u->id,
@@ -149,21 +168,35 @@ class OrderService
                 'payment_status' => 'paid',
                 'paid_at' => now(),
             ], array_intersect_key($payment, array_flip([
-                'status','payment_status','payment_provider','provider_order_id','payment_ref','paid_at',
+                'status', 'payment_status', 'payment_provider', 'provider_order_id', 'payment_ref', 'paid_at',
             ])));
-            if (Schema::hasColumn('orders', 'subtotal')) $payload['subtotal'] = $subtotal;
-            if (Schema::hasColumn('orders', 'delivery_charge')) $payload['delivery_charge'] = $delivery;
-            if (Schema::hasColumn('orders', 'gst_rate')) $payload['gst_rate'] = $gstRate;
-            if (Schema::hasColumn('orders', 'gst_amount')) $payload['gst_amount'] = $gst;
-            if ($couponCode && Schema::hasColumn('orders', 'coupon_code')) $payload['coupon_code'] = $couponCode;
-            if (Schema::hasColumn('orders', 'coupon_discount')) $payload['coupon_discount'] = $couponDiscount;
-            if ($coupon && Schema::hasColumn('orders', 'coupon_id')) $payload['coupon_id'] = $coupon->id;
+            if (Schema::hasColumn('orders', 'subtotal')) {
+                $payload['subtotal'] = $subtotal;
+            }
+            if (Schema::hasColumn('orders', 'delivery_charge')) {
+                $payload['delivery_charge'] = $delivery;
+            }
+            if (Schema::hasColumn('orders', 'gst_rate')) {
+                $payload['gst_rate'] = $gstRate;
+            }
+            if (Schema::hasColumn('orders', 'gst_amount')) {
+                $payload['gst_amount'] = $gst;
+            }
+            if ($couponCode && Schema::hasColumn('orders', 'coupon_code')) {
+                $payload['coupon_code'] = $couponCode;
+            }
+            if (Schema::hasColumn('orders', 'coupon_discount')) {
+                $payload['coupon_discount'] = $couponDiscount;
+            }
+            if ($coupon && Schema::hasColumn('orders', 'coupon_id')) {
+                $payload['coupon_id'] = $coupon->id;
+            }
 
             $order = Order::create($payload);
 
             if ($coupon) {
                 $coupon->increment('used_count');
-                \App\Models\CouponUsage::create([
+                CouponUsage::create([
                     'coupon_id' => $coupon->id,
                     'user_id' => $u->id,
                     'order_id' => $order->id,
@@ -172,7 +205,9 @@ class OrderService
             }
 
             $cart = Cart::where('user_id', $u->id)->first();
-            if ($cart) $cart->items()->delete();
+            if ($cart) {
+                $cart->items()->delete();
+            }
 
             return $order;
         });
@@ -183,17 +218,17 @@ class OrderService
             $admins = User::where('role', 'admin')->get();
             foreach ($admins as $admin) {
                 try {
-                    \App\Http\Controllers\NotificationController::push($admin->id, $title, $body, 'order');
+                    NotificationController::push($admin->id, $title, $body, 'order');
                 } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('Admin notification failed: '.$e->getMessage());
+                    Log::warning('Admin notification failed: '.$e->getMessage());
                 }
                 try {
-                    app(\App\Services\FcmService::class)->sendToUser($admin, $title, $body, [
+                    app(FcmService::class)->sendToUser($admin, $title, $body, [
                         'order_id' => $order->id,
                         'order_code' => $order->order_code,
                     ]);
                 } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('FCM notification failed: '.$e->getMessage());
+                    Log::warning('FCM notification failed: '.$e->getMessage());
                 }
             }
         }

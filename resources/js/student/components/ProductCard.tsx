@@ -1,7 +1,8 @@
 /** Shared product card reused by home / wishlist / details-related. */
-import { Link } from 'react-router-dom'
+import { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { Heart, ShoppingCart, Star } from 'lucide-react'
-import { deliveryLabel, discount, rupee, useShop } from '../store/shop'
+import { deliveryLabel, discount, fetchProduct, rupee, useShop } from '../store/shop'
 import type { Product } from '../data/products'
 import { ShareButton } from './ShareButton'
 
@@ -15,10 +16,27 @@ export function Stars({ v }: { v: number }) {
 }
 
 export function ProductCard({ p }: { p: Product }) {
-  const { add, wish, toggleWish } = useShop()
+  const { add, wish, toggleWish, mergeRows } = useShop()
+  const navigate = useNavigate()
+  const [added, setAdded] = useState(false)
   const off = discount(p)
   const loved = wish.includes(p.id)
-  const hasVariants = (p.variants ?? []).length > 0
+  const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
+
+  const handleProductAction = async () => {
+    if (hasVariants) {
+      try {
+        const row = await fetchProduct(p.id)
+        mergeRows([row])
+      } catch { /* product details fetch failed — still navigate */ }
+      navigate(`/product/${p.id}`)
+      return
+    }
+    add(p.id)
+    setAdded(true)
+    window.setTimeout(() => setAdded(false), 1600)
+  }
+
   return (
     <article className="card card-hover group flex flex-col overflow-visible">
       <Link to={`/product/${p.id}`} className="relative block aspect-[4/3] overflow-hidden">
@@ -40,21 +58,15 @@ export function ProductCard({ p }: { p: Product }) {
           {p.mrp > p.price && <span className="tnum text-xs text-[var(--text-subtle)] line-through">{rupee(p.mrp)}</span>}
         </div>
         <div className="mt-3 flex gap-2">
-          {hasVariants ? (
-            <Link to={`/product/${p.id}`} className="btn btn-secondary flex-1 !py-2 text-xs">
-              <ShoppingCart className="h-4 w-4" /> Choose options
-            </Link>
-          ) : (
-            <button onClick={() => add(p.id)} className="btn btn-primary flex-1 !py-2 text-xs">
-              <ShoppingCart className="h-4 w-4" /> Add to cart
-            </button>
-          )}
+          <button type="button" onClick={handleProductAction} className="btn btn-secondary flex-1 !py-2 text-xs" disabled={!hasVariants && p.stock <= 0}>
+            <ShoppingCart className="h-4 w-4" /> {hasVariants ? 'Choose options' : added ? 'Added' : 'Add to cart'}
+          </button>
           <button onClick={() => toggleWish(p.id)} aria-label="Wishlist"
             className={`btn btn-icon !p-2 ${loved ? 'bg-rose-50 text-rose-500' : 'btn-secondary'}`}>
             <Heart className={`h-4 w-4 ${loved ? 'fill-rose-500' : ''}`} />
           </button>
-          <ShareButton p={p} />
         </div>
+        <ShareButton p={p} />
       </div>
     </article>
   )

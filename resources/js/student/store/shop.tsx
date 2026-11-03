@@ -3,7 +3,7 @@
  */
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api, errMsg, metaOf, rowsOf } from '@lib/api'
-import { DUMMY_PRODUCTS } from '../data/products'
+
 import { loadRazorpayScript, type RazorpayPaymentResponse } from '../lib/razorpay'
 import type { Product } from '../data/products'
 
@@ -72,10 +72,23 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
   const vals = r.values as { value?: unknown; field?: { name?: string } }[] | undefined
   const price = Number(r.price ?? 0)
   const imageUrls = (images ?? []).map((im) => im.url ?? im.path ?? '').filter(Boolean)
-  const rawVariants = Array.isArray(r.variants) ? r.variants : undefined
-  const variants = rawVariants?.map((v: Record<string, unknown>) => ({
+  const rawVariants = Array.isArray(r.variants) ? r.variants as Record<string, unknown>[] : []
+  const rawStockRows = Array.isArray(r.stock_rows) ? r.stock_rows as Record<string, unknown>[] : Array.isArray(r.product_stocks) ? r.product_stocks as Record<string, unknown>[] : []
+  const stockRows = rawStockRows.map((row) => ({
+    id: Number(row.id ?? 0) || undefined,
+    variant_id: row.variant_id == null ? null : Number(row.variant_id),
+    colour: String(row.colour ?? row.color ?? ''),
+    color_code: row.color_code == null ? null : String(row.color_code),
+    size: String(row.size ?? ''),
+    quantity: Number(row.quantity ?? row.stock ?? row.qty ?? 0),
+    stock: Number(row.quantity ?? row.stock ?? row.qty ?? 0),
+    qty: Number(row.quantity ?? row.stock ?? row.qty ?? 0),
+  }))
+  const variantRows = stockRows.length ? stockRows : rawVariants
+  const variants = variantRows.map((v: Record<string, unknown>) => ({
     id: (v.id ?? v.variant_id) as string | number | undefined,
     color: (v.color ?? v.colour ?? null) as string | null,
+    color_code: (v.color_code ?? null) as string | null,
     size: v.size as string | null,
     stock: v.stock == null ? null : Number(v.stock ?? v.quantity ?? 0),
     price: v.price == null ? null : Number(v.price ?? price),
@@ -94,8 +107,7 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
     category: cat?.name ?? 'Book',
     subCategory: sub?.name ?? null,
     price, mrp: Number(r.mrp ?? price),
-    rating: 4.5, reviews: 50 + ((i * 37) % 300), stock: Number(r.stock ?? 10),
-    image: imageUrls[0] ?? DUMMY_PRODUCTS[i % DUMMY_PRODUCTS.length].image,
+    rating: Number(r.rating ?? 4.5), reviews: Number(r.reviews_count ?? (50 + ((i * 37) % 300))), stock: Number(r.stock ?? 10), stock_rows: stockRows, is_variant: r.is_variant == null ? variantRows.length > 0 : Boolean(r.is_variant), image: imageUrls[0] ?? 'https://images.unsplash.com/photo-1449824900964-72a3873ebcb9?auto=format&fit=crop&w=800&q=80',
     images: imageUrls.length ? imageUrls : undefined,
     delivery: (r.delivery_mode as Product['delivery']) ?? 'school_pickup',
     deliveryCharge: r.delivery_charge == null ? null : Number(r.delivery_charge),
@@ -130,7 +142,7 @@ export async function fetchProduct(id: string | number): Promise<Product> {
 }
 
 export function ShopProvider({ children }: { children: ReactNode }) {
-  const [products, setProducts] = useState<Product[]>(DUMMY_PRODUCTS)
+  const [products, setProducts] = useState<Product[]>([])
   const [live, setLive] = useState(false)
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState<Student | null>(() => read<Student | null>(S_KEY, null))
@@ -197,8 +209,8 @@ const loadCartFromBackend = async () => {
   if (!isAuthed()) return
   try {
     const r = await api.get('/student/cart')
-    const rows = rowsOf<{ product_code?: string | number; product_id?: string | number; qty: number }>(r.data)
-    setCart(rows.map((x) => ({ id: String(x.product_code ?? x.product_id), qty: Number(x.qty) })))
+    const rows = rowsOf<{ product_code?: string | number; product_id?: string | number; qty: number; color?: string | null; size?: string | null }>(r.data)
+    setCart(rows.map((x) => ({ id: String(x.product_code ?? x.product_id), qty: Number(x.qty), color: x.color ?? null, size: x.size ?? null })))
   } catch { /* keep cached */ }
 }
 const loadWishlistFromBackend = async () => {
@@ -302,7 +314,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         if (localCart.length) {
           await api.delete('/student/cart').catch(() => {})
           for (const l of localCart) {
-            await api.post('/student/cart/items', { product_code: l.id, qty: l.qty }).catch(() => {})
+            await api.post('/student/cart/items', { product_code: l.id, qty: l.qty, color: l.color, size: l.size }).catch(() => {})
           }
           localStorage.removeItem(C_KEY)
         }
@@ -324,9 +336,10 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         setCart((c) => {
           const p = byId.get(id)
           let cap = p ? Math.max(0, p.stock) : 9
-          if (color != null || size != null) {
+          const hasVariants = p?.is_variant ?? (p?.variants ?? []).length > 0
+          if (hasVariants) {
             const v = (p?.variants ?? []).find((x) => x.color === color && x.size === size)
-            if (v && v.stock != null) cap = v.stock
+            cap = Number(v?.stock ?? 0)
           }
           cap = Math.min(9, cap)
           if (cap <= 0) return c
@@ -347,9 +360,10 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         setCart((c) => {
           const p = byId.get(id)
           let cap = p ? Math.max(0, p.stock) : 9
-          if (color != null || size != null) {
+          const hasVariants = p?.is_variant ?? (p?.variants ?? []).length > 0
+          if (hasVariants) {
             const v = (p?.variants ?? []).find((x) => x.color === color && x.size === size)
-            if (v && v.stock != null) cap = v.stock
+            cap = Number(v?.stock ?? 0)
           }
           cap = Math.min(9, cap)
           const key = (l: CartLine) => l.id === id && l.color === color && l.size === size
@@ -360,7 +374,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
       }
       void (async () => {
         try {
-          if (qty <= 0) await api.delete(`/student/cart/items/${id}`)
+          if (qty <= 0) await api.delete(`/student/cart/items/${encodeURIComponent(id)}`, { params: { color, size } })
           else await api.patch(`/student/cart/items/${id}`, { qty, color, size })
         } catch {}
         await loadCartFromBackend()
@@ -372,7 +386,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
         return
       }
       void (async () => {
-        try { await api.delete(`/student/cart/items/${id}`) } catch {}
+        try { await api.delete(`/student/cart/items/${encodeURIComponent(id)}`, { params: { color, size } }) } catch {}
         await loadCartFromBackend()
       })()
     },
@@ -485,7 +499,7 @@ const byId = useMemo(() => new Map(products.map((p) => [p.id, p])), [products])
           razorpay_order_id: payment.razorpay_order_id,
           razorpay_payment_id: payment.razorpay_payment_id,
           razorpay_signature: payment.razorpay_signature,
-          items: o.items.map((it) => ({ id: it.id, name: it.name, qty: it.qty, price: it.price, image: it.image })),
+          items: o.items.map((it) => ({ id: it.id, name: it.name, qty: it.qty, price: it.price, image: it.image, color: it.color, size: it.size })),
           total: o.total,
           pay_mode: o.payMode,
           delivery: o.delivery,

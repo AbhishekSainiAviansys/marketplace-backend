@@ -6,7 +6,8 @@ import { assetUrl } from '@lib/brand'
 import { useToast } from '@ui'
 
 type Cat = { id: number; name: string }
-type StockRow = { colour: string; size: string; quantity: number }
+type StockRow = { colour: string; color_code: string; size: string; quantity: number }
+const DEFAULT_STOCK_COLOR = '#64748b'
 type CatField = {
   id: number
   field_name: string
@@ -29,10 +30,10 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const [subCats, setSubCats] = useState<Cat[]>([])
   const [subCatId, setSubCatId] = useState('')
   const [fields, setFields] = useState<CatField[]>([])
-  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', portal_charge: '', server_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '' })
+  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', portal_charge: '', server_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '', is_variant: false })
   const [vals, setVals] = useState<Record<string, string>>({})
   const [images, setImages] = useState<string[]>([])
-  const [stocks, setStocks] = useState<StockRow[]>([{ colour: '', size: '', quantity: 0 }])
+  const [stocks, setStocks] = useState<StockRow[]>([{ colour: '', color_code: DEFAULT_STOCK_COLOR, size: '', quantity: 0 }])
   const mrpNum = Number(form.mrp || 0)
   const priceNum = Number(form.price || 0)
   const discountAmount = mrpNum > priceNum && mrpNum > 0 ? mrpNum - priceNum : 0
@@ -92,6 +93,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
           stock: p.stock ?? 0,
           delivery_mode: p.delivery_mode ?? 'self',
           is_boost: !!p.is_boost,
+          is_variant: !!p.is_variant,
           boost_until: p.boost_until ? String(p.boost_until).slice(0, 10) : '',
         })
         const vmap: Record<string, string> = {}
@@ -99,13 +101,14 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         setVals(vmap)
         setImages((p.images ?? []).map((img: { url?: string }) => img.url).filter(Boolean))
         const prev: StockRow[] = (p.product_stocks ?? [])
-          .map((s: { colour?: string; color?: string; size?: string; quantity?: number; stock?: number }) => ({
+          .map((s: { colour?: string; color?: string; color_code?: string; size?: string; quantity?: number; stock?: number }) => ({
             colour: s.colour ?? s.color ?? '',
+            color_code: s.color_code ?? DEFAULT_STOCK_COLOR,
             size: s.size ?? '',
             quantity: Number(s.quantity ?? s.stock ?? 0),
           }))
           .filter((s: StockRow) => (s.colour || s.size) && s.quantity > 0)
-        setStocks(prev.length ? prev : [{ colour: '', size: '', quantity: 0 }])
+        setStocks(prev.length ? prev : [{ colour: '', color_code: DEFAULT_STOCK_COLOR, size: '', quantity: 0 }])
       })
       .catch((e) => toast('err', errMsg(e, 'Could not load product')))
   }, [id, prefix])
@@ -171,7 +174,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         images,
         product_stocks: stocks
           .filter((s) => (s.colour || s.size) && s.quantity > 0)
-          .map((s) => ({ colour: s.colour, size: s.size, quantity: Number(s.quantity) })),
+          .map((s) => ({ colour: s.colour, color_code: s.color_code, size: s.size, quantity: Number(s.quantity) })),
         is_boost: form.is_boost,
         boost_until: form.boost_until || null,
         delivery_charge: form.delivery_charge === '' ? null : Number(form.delivery_charge),
@@ -287,15 +290,16 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
                 className="field focus:field-focus outline-none"
               />
             </label>
-            <label className="block">
+            {!form.is_variant && <label className="block">
               <span className="mb-1.5 block text-sm font-medium text-slate-700">Stock</span>
               <input
                 type="number"
+                min={0}
                 value={form.stock}
                 onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
                 className="field focus:field-focus outline-none"
               />
-            </label>
+            </label>}
           </div>
 
           <label className="block">
@@ -351,42 +355,37 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
             <label className="flex items-center gap-2 pt-7">
               <input
                 type="checkbox"
-                checked={form.is_boost}
-                onChange={(e) => setForm({ ...form, is_boost: e.target.checked })}
+                checked={form.is_variant}
+                onChange={(e) => {
+                  setForm({ ...form, is_variant: e.target.checked })
+                  if (!e.target.checked) setStocks([{ colour: '', color_code: DEFAULT_STOCK_COLOR, size: '', quantity: 0 }])
+                }}
                 className="rounded border-slate-300 text-accent"
               />
-              <span className="text-sm font-medium text-slate-700">Boost this product</span>
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Boost until (optional)</span>
-              <input
-                type="date"
-                value={form.boost_until}
-                onChange={(e) => setForm({ ...form, boost_until: e.target.value })}
-                className="field focus:field-focus outline-none"
-              />
+              <span className="text-sm font-medium text-slate-700">Product has variants (colour/size)</span>
             </label>
           </div>
 
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-semibold text-slate-800">Colour / Size / Quantity variants</span>
-              <button
-                type="button"
-                onClick={() => setStocks([...stocks, { colour: '', size: '', quantity: 0 }])}
-                className="text-xs font-medium text-accent hover:underline"
-              >
-                + Add variant
-              </button>
-            </div>
+          {form.is_variant ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-800">Colour / Size / Quantity variants</span>
+                <button
+                  type="button"
+                  onClick={() => setStocks([...stocks, { colour: '', color_code: DEFAULT_STOCK_COLOR, size: '', quantity: 0 }])}
+                  className="text-xs font-medium text-accent hover:underline"
+                >
+                  + Add variant
+                </button>
+              </div>
             <p className="mb-3 text-xs text-slate-500">
               One row per colour/size combination. Quantity is summed into the product stock total automatically.
             </p>
             <div className="space-y-3">
               {stocks.map((s, i) => (
-                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-4 sm:items-end">
+                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
                   <label className="block">
-                    <span className="mb-1 block text-xs font-medium text-slate-600">Colour</span>
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Colour name</span>
                     <input
                       value={s.colour}
                       onChange={(e) => {
@@ -395,6 +394,19 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
                       }}
                       placeholder="e.g. Blue"
                       className="field focus:field-focus outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-xs font-medium text-slate-600">Colour swatch</span>
+                    <input
+                      type="color"
+                      value={s.color_code}
+                      onChange={(e) => {
+                        const colorCode = e.target.value.toUpperCase()
+                        setStocks(stocks.map((r, k) => (k === i ? { ...r, color_code: colorCode } : r)))
+                      }}
+                      aria-label={`Colour code for ${s.colour || `variant ${i + 1}`}`}
+                      className="field h-11 cursor-pointer p-1"
                     />
                   </label>
                   <label className="block">
@@ -442,8 +454,9 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               </p>
             )}
           </div>
+          ) : null}
 
-           {fields.map((f) => {
+          {fields.map((f) => {
              const key = String(f.id)
              const required = Boolean(f.is_required)
              const value = vals[key] ?? ''

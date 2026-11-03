@@ -236,11 +236,11 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
                 className="field focus:field-focus outline-none"
               />
             </label>
-            <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Stock</span>
+            <label className="block hidden">
+              {/* Stock managed via colour/size variants only */}
               <input
-                type="number"
-                value={form.stock}
+                type="hidden"
+                value="0"
                 onChange={(e) => setForm({ ...form, stock: Number(e.target.value) })}
                 className="field focus:field-focus outline-none"
               />

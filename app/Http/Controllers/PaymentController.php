@@ -18,10 +18,11 @@ class PaymentController extends Controller
                 ->active()
                 ->razorpay()
                 ->first();
-            if ($row && !empty($row->public) && !empty($row->private)) {
+            if ($row && ! empty($row->public) && ! empty($row->private)) {
                 return ['key_id' => $row->public, 'key_secret' => $row->private];
             }
         }
+
         return ['key_id' => null, 'key_secret' => null];
     }
 
@@ -43,15 +44,16 @@ class PaymentController extends Controller
             ->post('https://api.razorpay.com/v1/orders', [
                 'amount' => $amountPaise,
                 'currency' => strtoupper($d['currency'] ?? 'INR'),
-                'receipt' => $d['receipt'] ?? ('rcpt_' . now()->timestamp),
+                'receipt' => $d['receipt'] ?? ('rcpt_'.now()->timestamp),
                 'payment_capture' => 1,
             ]);
 
-        if (!$res->successful()) {
+        if (! $res->successful()) {
             abort(502, 'Unable to create Razorpay order.');
         }
 
         $rz = $res->json();
+
         return response()->json([
             'key_id' => $creds['key_id'],
             'razorpay_order_id' => $rz['id'],
@@ -69,6 +71,8 @@ class PaymentController extends Controller
             'items' => 'required|array|min:1',
             'items.*.id' => 'nullable|integer|exists:products,id',
             'items.*.qty' => 'nullable|integer|min:1',
+            'items.*.color' => 'nullable|string|max:60',
+            'items.*.size' => 'nullable|string|max:60',
             'total' => 'required|numeric|min:0',
             'pay_mode' => 'nullable|string|max:50',
             'delivery' => 'nullable|string|max:100',
@@ -90,8 +94,8 @@ class PaymentController extends Controller
             abort(503, 'Razorpay is not configured.');
         }
 
-        $expected = hash_hmac('sha256', $d['razorpay_order_id'] . '|' . $d['razorpay_payment_id'], $creds['key_secret']);
-        if (!hash_equals($expected, $d['razorpay_signature'])) {
+        $expected = hash_hmac('sha256', $d['razorpay_order_id'].'|'.$d['razorpay_payment_id'], $creds['key_secret']);
+        if (! hash_equals($expected, $d['razorpay_signature'])) {
             abort(422, 'Invalid payment signature.');
         }
 

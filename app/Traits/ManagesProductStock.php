@@ -17,6 +17,7 @@ trait ManagesProductStock
                 return array_values($r->input($key));
             }
         }
+
         return [];
     }
 
@@ -27,6 +28,19 @@ trait ManagesProductStock
                 return (string) $row[$key];
             }
         }
+
+        return null;
+    }
+
+    protected function normalizeStockColorCode(array $row): ?string
+    {
+        foreach (['color_code', 'colour_code'] as $key) {
+            $value = isset($row[$key]) ? strtoupper(trim((string) $row[$key])) : '';
+            if (preg_match('/\A#[0-9A-F]{6}\z/', $value)) {
+                return $value;
+            }
+        }
+
         return null;
     }
 
@@ -35,6 +49,7 @@ trait ManagesProductStock
         if (isset($row['size']) && $row['size'] !== '') {
             return (string) $row['size'];
         }
+
         return null;
     }
 
@@ -45,25 +60,29 @@ trait ManagesProductStock
                 return (int) $row[$key];
             }
         }
+
         return 0;
     }
 
     protected function persistProductStockRows(Product $product, array $rows, string $reason): void
     {
-        if (!Schema::hasTable('product_stock')) {
+        if (! Schema::hasTable('product_stock')) {
             return;
         }
 
         ProductStock::where('product_id', $product->id)->delete();
+        $totalQuantity = 0;
 
         foreach ($rows as $row) {
-            if (!is_array($row)) {
+            if (! is_array($row)) {
                 continue;
             }
 
             $colour = $this->normalizeStockColour($row);
+            $colorCode = $this->normalizeStockColorCode($row);
             $size = $this->normalizeStockSize($row);
             $quantity = $this->normalizeStockQuantity($row);
+            $totalQuantity += $quantity;
             $variantId = isset($row['variant_id']) && $row['variant_id'] !== '' ? (int) $row['variant_id'] : null;
 
             $data = [
@@ -77,6 +96,9 @@ trait ManagesProductStock
             }
             if (Schema::hasColumn('product_stock', 'color')) {
                 $data['color'] = $colour;
+            }
+            if (Schema::hasColumn('product_stock', 'color_code')) {
+                $data['color_code'] = $colorCode;
             }
             if (Schema::hasColumn('product_stock', 'quantity')) {
                 $data['quantity'] = $quantity;
@@ -105,6 +127,9 @@ trait ManagesProductStock
                 if (Schema::hasColumn('stock_tracking', 'color')) {
                     $tracking['color'] = $colour;
                 }
+                if (Schema::hasColumn('stock_tracking', 'color_code')) {
+                    $tracking['color_code'] = $colorCode;
+                }
                 if (Schema::hasColumn('stock_tracking', 'delta')) {
                     $tracking['delta'] = $quantity;
                 }
@@ -120,6 +145,11 @@ trait ManagesProductStock
 
                 StockTracking::create($tracking);
             }
+        }
+
+        if (Schema::hasColumn('products', 'stock')) {
+            $product->stock = $totalQuantity;
+            $product->save();
         }
     }
 

@@ -11,6 +11,7 @@ class StockTracking extends Model
     public $timestamps = false;
 
     const CREATED_AT = 'created_at';
+
     const UPDATED_AT = null;
 
     protected $fillable = [
@@ -18,6 +19,7 @@ class StockTracking extends Model
         'variant_id',
         'colour',
         'color',
+        'color_code',
         'size',
         'delta',
         'quantity',

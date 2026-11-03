@@ -15,17 +15,19 @@ export function Login() {
   const [params] = useSearchParams()
   const next = params.get('next') || '/profile'
   const { login: save } = useShop()
+  const fcmToken = localStorage.getItem('fcm_token') || undefined
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErr(''); setBusy(true)
     try {
-      const { data } = await api.post('/auth/login', { login: login.trim(), password })
+      const { data } = await api.post('/auth/login', { login: login.trim(), password, fcm_token: fcmToken })
       const role = data?.user?.role
       if (role && role !== 'student') throw new Error(`This store is for student accounts (signed in as ${role}).`)
       if (!data?.token || !data?.user) throw new Error('Login did not return a session token.')
       localStorage.setItem('token', data.token)
       localStorage.setItem('user', JSON.stringify(data.user))
+      if (data.fcm_token_saved) { localStorage.setItem('fcm_token', fcmToken ?? '') }
       save({
         name: data.user.name ?? login.trim(),
         className: data.user.class_name ?? '5',

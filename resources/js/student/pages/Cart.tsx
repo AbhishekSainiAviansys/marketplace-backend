@@ -20,8 +20,9 @@ export function Cart() {
   const couponAmount = couponCode ? couponDiscount : 0
   const payable = Math.max(0, cartTotal('home', cartDetailed) - couponAmount)
   const hasStockIssue = cartDetailed.some(({ p, qty, color, size }) => {
+    const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
     const lineVariant = (color != null || size != null) ? (p.variants ?? []).find((x) => x.color === color && x.size === size) : undefined
-    const lineStock = lineVariant?.stock ?? p.stock
+    const lineStock = hasVariants ? Number(lineVariant?.stock ?? 0) : p.stock
     return lineStock <= 0 || qty > lineStock
   })
 
@@ -57,8 +58,9 @@ export function Cart() {
     <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
       <div className="card divide-y divide-[var(--border)]">
         {cartDetailed.map(({ p, qty, color, size }) => {
+          const hasVariants = p.is_variant ?? (p.variants ?? []).length > 0
           const lineVariant = (color != null || size != null) ? (p.variants ?? []).find((x) => x.color === color && x.size === size) : undefined
-          const lineStock = lineVariant?.stock ?? p.stock
+          const lineStock = hasVariants ? Number(lineVariant?.stock ?? 0) : p.stock
           return (
             <div key={`${p.id}::${color ?? '-'}::${size ?? '-'}`} className="flex gap-3 p-4">
               <Link to={`/product/${p.id}`}><img src={p.image} alt={p.name} className="h-20 w-24 rounded-xl border border-[var(--border)] object-cover" /></Link>
