@@ -13,7 +13,10 @@ class CommonController extends Controller
     {
         $relations = ['category', 'subCategory', 'images', 'variants'];
         if ($details) {
-            $relations[] = 'values.field';
+            $relations[] = 'values';
+            if (Schema::hasTable('category_fields')) {
+                $relations[] = 'values.field';
+            }
         }
         if (Schema::hasTable('product_stock')) {
             $relations[] = 'productStocks';

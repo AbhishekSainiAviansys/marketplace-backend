@@ -339,6 +339,11 @@ class StudentController extends Controller
     {
         $p = is_numeric($product) ? Product::findOrFail($product) : Product::where('product_code', (string) $product)->firstOrFail();
         $p->load(['stocks', 'variants', 'reviews.user']);
+        if (\Illuminate\Support\Facades\Schema::hasTable('category_fields') && \Illuminate\Support\Facades\Schema::hasTable('product_values')) {
+            $p->load('values.field');
+        } elseif (\Illuminate\Support\Facades\Schema::hasTable('product_values')) {
+            $p->load('values');
+        }
         // Merge product_stocks into rows for frontend
         $stockRows = [];
         if (Schema::hasTable('product_stock')) {

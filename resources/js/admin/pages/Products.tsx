@@ -1,9 +1,9 @@
 ﻿import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { PlusCircle, Trash2, Zap, Eye, EyeOff, Pencil, Search } from 'lucide-react'
+import { PlusCircle, Trash2, Zap, Eye, EyeOff, Pencil, Search, Package, Loader2 } from 'lucide-react'
 import { api, errMsg, metaOf, rowsOf } from '@lib/api'
 import { assetUrl } from '@lib/brand'
-import { Button, EmptyState, PageHeader, Panel, Skeleton, useToast } from '@ui'
+import { Button, EmptyState, Modal, PageHeader, Panel, Skeleton, useToast } from '@ui'
 
 type Product = {
   id?: number
@@ -25,7 +25,8 @@ type Product = {
   images?: { id?: number; url?: string }[]
   values?: { id?: number; field?: { name?: string }; value_text?: string | null }[]
   variants?: { id?: number; size?: string | null; color?: string | null; stock?: number; sku?: string | null }[]
-  productStocks?: { quantity?: number; color?: string | null; size?: string | null }[]
+  product_stocks?: { id?: number; quantity?: number; stock?: number; qty?: number; color?: string | null; colour?: string | null; size?: string | null; color_code?: string | null; variant_id?: number | null }[]
+  stock_trackings?: { id?: number; delta?: number; quantity?: number; qty?: number; change?: number; color?: string | null; colour?: string | null; size?: string | null; color_code?: string | null; reason?: string | null; created_at?: string | null; variant_id?: number | null }[]
 }
 
 const DELIVERY: Record<string, string> = {
@@ -45,6 +46,12 @@ export function Products() {
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [stockModalOpen, setStockModalOpen] = useState(false)
+  const [stockModalProduct, setStockModalProduct] = useState<Product | null>(null)
+  const [stockLoading, setStockLoading] = useState(false)
+  const [stockPage, setStockPage] = useState(1)
+  const [trackingPage, setTrackingPage] = useState(1)
+  const STOCK_PAGE_SIZE = 8
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -93,6 +100,22 @@ export function Products() {
       toast('err', errMsg(e, 'Delete failed'))
     } finally {
       setBusyId(null)
+    }
+  }
+
+  const openStockModal = async (p: Product) => {
+    setStockModalProduct(p)
+    setStockModalOpen(true)
+    setStockPage(1)
+    setTrackingPage(1)
+    setStockLoading(true)
+    try {
+      const { data } = await api.get(`/admin/products/${p.product_code}`)
+      setStockModalProduct(data as Product)
+    } catch (e) {
+      toast('err', errMsg(e, 'Could not load stock details'))
+    } finally {
+      setStockLoading(false)
     }
   }
 
@@ -230,15 +253,15 @@ export function Products() {
                   </div>
                   <p className="mt-0.5 text-xs text-[var(--text-muted)]">
                     {p.category?.name ?? 'Uncategorised'}
-                    {p.delivery_mode ? ` · ${DELIVERY[p.delivery_mode] ?? p.delivery_mode}` : ''}
+                    {p.delivery_mode ? ` ${DELIVERY[p.delivery_mode] ?? p.delivery_mode}` : ''}
                   </p>
                   <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
-                    <span><span className="text-[var(--text-subtle)]">MRP:</span> ₹{Number(p.mrp ?? 0).toFixed(2)}</span>
-                    <span><span className="text-[var(--text-subtle)]">Price:</span> ₹{Number(p.price ?? 0).toFixed(2)}</span>
+                    <span><span className="text-[var(--text-subtle)]">MRP:</span> ?{Number(p.mrp ?? 0).toFixed(2)}</span>
+                    <span><span className="text-[var(--text-subtle)]">Price:</span> ?{Number(p.price ?? 0).toFixed(2)}</span>
                     <span><span className="text-[var(--text-subtle)]">Stock:</span> {p.stock ?? 0}</span>
-                    <span><span className="text-[var(--text-subtle)]">Delivery:</span> {p.delivery_charge == null ? 'Estimated' : `₹${Number(p.delivery_charge).toFixed(2)}`}</span>
-                    <span><span className="text-[var(--text-subtle)]">Portal:</span> {p.portal_charge == null ? '—' : `₹${Number(p.portal_charge).toFixed(2)}`}</span>
-                    <span><span className="text-[var(--text-subtle)]">Server:</span> {p.server_charge == null ? '—' : `₹${Number(p.server_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Delivery:</span> {p.delivery_charge == null ? 'Estimated' : `?${Number(p.delivery_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Portal:</span> {p.portal_charge == null ? '0' : `?${Number(p.portal_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Server:</span> {p.server_charge == null ? '0' : `?${Number(p.server_charge).toFixed(2)}`}</span>
                   </div>
                 </div>
 
@@ -274,6 +297,14 @@ export function Products() {
                   >
                     {p.is_active ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     {p.is_active ? 'Active' : 'Inactive'}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    aria-label={`Stock ${p.name}`}
+                    className="shrink-0"
+                    onClick={() => void openStockModal(p)}
+                  >
+                    <Package className="h-4 w-4" />
                   </Button>
                   <Link to={`/products/${p.product_code}/edit`}>
                     <Button variant="ghost" aria-label={`Edit ${p.name}`} className="shrink-0">
@@ -313,6 +344,98 @@ export function Products() {
           </Button>
         </div>
       )}
+      {stockModalOpen && (
+        <Modal title={`Stock details ${stockModalProduct?.name ?? ''}`} sub="Product stock rows and tracking history." wide onClose={() => setStockModalOpen(false)}>
+          {stockLoading ? (
+            <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading stock details…
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">Product stocks</h3>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Colour</th>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Size</th>
+                        <th className="px-3 py-2 text-right text-xs text-slate-500">Qty</th>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Color code</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stockModalProduct?.product_stocks ?? []).length === 0 ? (
+                        <tr><td colSpan={4} className="px-3 py-4 text-center text-slate-400">No stock rows</td></tr>
+                      ) : (
+                        (stockModalProduct?.product_stocks ?? [])
+                          .slice((stockPage - 1) * STOCK_PAGE_SIZE, stockPage * STOCK_PAGE_SIZE)
+                          .map((s, i) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="px-3 py-2">{s.colour ?? s.color ?? '0'}</td>
+                              <td className="px-3 py-2">{s.size ?? '0'}</td>
+                              <td className="px-3 py-2 text-right">{Number(s.quantity ?? s.stock ?? s.qty ?? 0)}</td>
+                              <td className="px-3 py-2">{s.color_code ?? '0'}</td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {(stockModalProduct?.product_stocks ?? []).length > STOCK_PAGE_SIZE && (
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                    <button type="button" disabled={stockPage <= 1} onClick={() => setStockPage((p) => p - 1)} className="btn btn-secondary !py-1 !text-xs">Prev</button>
+                    <span>Page {stockPage} of {Math.ceil((stockModalProduct?.product_stocks?.length ?? 0) / STOCK_PAGE_SIZE)}</span>
+                    <button type="button" disabled={stockPage >= Math.ceil((stockModalProduct?.product_stocks?.length ?? 0) / STOCK_PAGE_SIZE)} onClick={() => setStockPage((p) => p + 1)} className="btn btn-secondary !py-1 !text-xs">Next</button>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">Stock trackings</h3>
+                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Colour</th>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Size</th>
+                        <th className="px-3 py-2 text-right text-xs text-slate-500">Quantity</th>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">Reason</th>
+                        <th className="px-3 py-2 text-left text-xs text-slate-500">When</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(stockModalProduct?.stock_trackings ?? []).length === 0 ? (
+                        <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No tracking rows</td></tr>
+                      ) : (
+                        (stockModalProduct?.stock_trackings ?? [])
+                          .slice((trackingPage - 1) * STOCK_PAGE_SIZE, trackingPage * STOCK_PAGE_SIZE)
+                          .map((t, i) => (
+                            <tr key={i} className="border-t border-slate-100">
+                              <td className="px-3 py-2">{t.colour ?? t.color ?? '0'}{t.color_code}</td>
+                              <td className="px-3 py-2">{t.size ?? '0'}</td>
+                              <td className="px-3 py-2 text-right">{Number(t.change ?? t.quantity ?? t.qty ?? 0)}</td>
+                              <td className="px-3 py-2">{t.reason ?? '0'}</td>
+                              <td className="px-3 py-2">{t.created_at ?? '0'}</td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {(stockModalProduct?.stock_trackings ?? []).length > STOCK_PAGE_SIZE && (
+                  <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                    <button type="button" disabled={trackingPage <= 1} onClick={() => setTrackingPage((p) => p - 1)} className="btn btn-secondary !py-1 !text-xs">Prev</button>
+                    <span>Page {trackingPage} of {Math.ceil((stockModalProduct?.stock_trackings?.length ?? 0) / STOCK_PAGE_SIZE)}</span>
+                    <button type="button" disabled={trackingPage >= Math.ceil((stockModalProduct?.stock_trackings?.length ?? 0) / STOCK_PAGE_SIZE)} onClick={() => setTrackingPage((p) => p + 1)} className="btn btn-secondary !py-1 !text-xs">Next</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+
     </div>
   )
 }

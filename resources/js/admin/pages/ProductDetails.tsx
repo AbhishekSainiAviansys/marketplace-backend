@@ -1,9 +1,9 @@
-﻿import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Pencil, Trash2, Eye, EyeOff, Zap } from 'lucide-react'
+import { ArrowLeft, Pencil, Trash2, Eye, EyeOff, Zap, Package, Loader2 } from 'lucide-react'
 import { api, errMsg } from '@lib/api'
 import { assetUrl } from '@lib/brand'
-import { Button, EmptyState, PageHeader, Panel, Skeleton, useToast } from '@ui'
+import { Button, EmptyState, Modal, PageHeader, Panel, Skeleton, useToast } from '@ui'
 
 type Product = {
   id?: number
@@ -23,9 +23,10 @@ type Product = {
   category?: { name?: string }
   subCategory?: { name?: string }
   images?: { id?: number; url?: string; is_primary?: boolean }[]
-  values?: { id?: number; field?: { name?: string }; value_text?: string | null }[]
+  values?: { id?: number; field?: { name?: string; field_name?: string; field_label?: string }; field_name?: string; field_label?: string; value_text?: string | null }[]
   variants?: { id?: number; size?: string | null; color?: string | null; stock?: number; sku?: string | null }[]
-  productStocks?: { quantity?: number; color?: string | null; size?: string | null }[]
+  product_stocks?: { id?: number; quantity?: number; stock?: number; qty?: number; color?: string | null; colour?: string | null; size?: string | null; color_code?: string | null; variant_id?: number | null }[]
+  stock_trackings?: { id?: number; delta?: number; quantity?: number; qty?: number; change?: number; color?: string | null; colour?: string | null; size?: string | null; color_code?: string | null; reason?: string | null; created_at?: string | null; variant_id?: number | null }[]
 }
 
 const DELIVERY: Record<string, string> = {
@@ -40,6 +41,11 @@ export function ProductDetails({ id }: { id: string }) {
   const [product, setProduct] = useState<Product | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const [stockModalOpen, setStockModalOpen] = useState(false)
+  const [stockLoading, setStockLoading] = useState(false)
+  const [stockData, setStockData] = useState<Product | null>(null)
+  const [trackingPage, setTrackingPage] = useState(1)
+  const STOCK_PAGE_SIZE = 8
 
   const load = useCallback(async () => {
     if (!id) return
@@ -58,6 +64,21 @@ export function ProductDetails({ id }: { id: string }) {
     void load()
   }, [load])
 
+  const openStockModal = async () => {
+    if (!product) return
+    setStockModalOpen(true)
+    setTrackingPage(1)
+    setStockLoading(true)
+    try {
+      const { data } = await api.get(`/admin/products/${product.product_code}`)
+      setStockData(data as Product)
+    } catch (e) {
+      toast('err', errMsg(e, 'Could not load stock details'))
+      setStockData(product)
+    } finally {
+      setStockLoading(false)
+    }
+  }
   const toggleActive = async () => {
     if (!product) return
     setBusy(true)
@@ -205,8 +226,8 @@ export function ProductDetails({ id }: { id: string }) {
               )}
               <div>
                 <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Price</h3>
-                <p className="text-sm font-semibold text-[var(--text)]">₹{Number(product.price ?? 0).toFixed(2)}</p>
-                <p className="text-xs text-[var(--text-muted)]">MRP ₹{Number(product.mrp ?? 0).toFixed(2)}</p>
+                <p className="text-sm font-semibold text-[var(--text)]">?{Number(product.price ?? 0).toFixed(2)}</p>
+                <p className="text-xs text-[var(--text-muted)]">MRP ?{Number(product.mrp ?? 0).toFixed(2)}</p>
               </div>
               <div>
                 <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Stock</h3>
@@ -215,7 +236,7 @@ export function ProductDetails({ id }: { id: string }) {
               <div>
                 <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Delivery mode</h3>
                 <p className="text-sm text-[var(--text)]">
-                  {product.delivery_mode ? DELIVERY[product.delivery_mode] ?? product.delivery_mode : '—'}
+                  {product.delivery_mode ? DELIVERY[product.delivery_mode] ?? product.delivery_mode : '-'}
                 </p>
               </div>
             </div>
@@ -226,19 +247,19 @@ export function ProductDetails({ id }: { id: string }) {
                 <div>
                   <span className="block text-[var(--text-muted)]">Delivery charge</span>
                   <span className="text-[var(--text)]">
-                    {product.delivery_charge == null ? '—' : `₹${Number(product.delivery_charge).toFixed(2)}`}
+                    {product.delivery_charge == null ? '0' : `₹${Number(product.delivery_charge).toFixed(2)}`}
                   </span>
                 </div>
                 <div>
                   <span className="block text-[var(--text-muted)]">Portal charge</span>
                   <span className="text-[var(--text)]">
-                    {product.portal_charge == null ? '—' : `₹${Number(product.portal_charge).toFixed(2)}`}
+                    {product.portal_charge == null ? '0' : `₹${Number(product.portal_charge).toFixed(2)}`}
                   </span>
                 </div>
                 <div>
                   <span className="block text-[var(--text-muted)]">Server charge</span>
                   <span className="text-[var(--text)]">
-                    {product.server_charge == null ? '—' : `₹${Number(product.server_charge).toFixed(2)}`}
+                    {product.server_charge == null ? '0' : `₹${Number(product.server_charge).toFixed(2)}`}
                   </span>
                 </div>
               </div>
@@ -259,19 +280,19 @@ export function ProductDetails({ id }: { id: string }) {
                 </tr>
               </thead>
               <tbody>
-                {(product.productStocks ?? product.variants ?? []).map((s, i) => (
+                {(product.product_stocks ?? product.variants ?? []).map((s, i) => (
                   <tr key={i} className="border-t border-slate-100">
-                    <td className="px-3 py-2">{s.size ?? '—'}</td>
-                    <td className="px-3 py-2">{s.color ?? '—'}</td>
+                    <td className="px-3 py-2">{s.size ?? '-'}</td>
+                    <td className="px-3 py-2">{s.color ?? '-'}</td>
                     <td className="px-3 py-2 text-right">
                       {Number((s as { quantity?: number | null }).quantity ?? (s as { stock?: number | null }).stock ?? 0)}
                     </td>
                     {product.variants && product.variants.length > 0 && 'sku' in s ? (
-                      <td className="px-3 py-2 text-right">{s.sku ?? '—'}</td>
+                      <td className="px-3 py-2 text-right">{s.sku ?? '-'}</td>
                     ) : null}
                   </tr>
                 ))}
-                {(product.productStocks ?? product.variants ?? []).length === 0 && (
+                {(product.product_stocks ?? product.variants ?? []).length === 0 && (
                   <tr>
                     <td colSpan={4} className="px-3 py-4 text-center text-[var(--text-muted)]">
                       No stock records
@@ -282,6 +303,12 @@ export function ProductDetails({ id }: { id: string }) {
             </table>
           </div>
 
+          <div className="mt-4">
+            <Button variant="secondary" onClick={() => void openStockModal()}>
+              <Package className="h-4 w-4" /> View stock Log
+            </Button>
+          </div>
+
           {(product.values ?? []).length > 0 && (
             <div className="mt-6">
               <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider mb-3">Attributes</h3>
@@ -289,8 +316,8 @@ export function ProductDetails({ id }: { id: string }) {
                 <tbody>
                   {(product.values ?? []).map((v) => (
                     <tr key={v.id} className="border-t border-slate-100">
-                      <td className="px-3 py-2 text-[var(--text-muted)]">{v.field?.name ?? 'Field'}</td>
-                      <td className="px-3 py-2 text-right">{v.value_text ?? '—'}</td>
+                      <td className="px-3 py-2 text-[var(--text-muted)]">{v.field_name ?? v.field?.field_name ?? v.field?.field_label ?? v.field?.name ?? 'Field'}</td>
+                      <td className="px-3 py-2 text-right">{v.value_text ?? '-'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -299,6 +326,57 @@ export function ProductDetails({ id }: { id: string }) {
           )}
         </div>
       </Panel>
+
+      {stockModalOpen && (
+        <Modal title={`Stock Log — ${product.name}`} sub="Stock movement history." wide onClose={() => setStockModalOpen(false)}>
+          {stockLoading ? (
+            <div className="flex items-center justify-center gap-2 p-10 text-sm text-slate-500">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <h3 className="mb-2 text-sm font-semibold text-slate-900">Stock trackings</h3>
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs text-slate-500">Colour</th>
+                      <th className="px-3 py-2 text-left text-xs text-slate-500">Size</th>
+                      <th className="px-3 py-2 text-right text-xs text-slate-500">Quantity</th>
+                      <th className="px-3 py-2 text-left text-xs text-slate-500">Reason</th>
+                      <th className="px-3 py-2 text-left text-xs text-slate-500">When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(stockData?.stock_trackings ?? []).length === 0 ? (
+                      <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">No tracking rows</td></tr>
+                    ) : (
+                      (stockData?.stock_trackings ?? [])
+                        .slice((trackingPage - 1) * STOCK_PAGE_SIZE, trackingPage * STOCK_PAGE_SIZE)
+                        .map((t, i) => (
+                          <tr key={i} className="border-t border-slate-100">
+                            <td className="px-3 py-2">{t.colour ?? t.color ?? '—'}</td>
+                            <td className="px-3 py-2">{t.size ?? '—'}</td>
+                            <td className="px-3 py-2 text-right">{Number(t.change ?? t.quantity ?? t.qty ?? 0)}</td>
+                            <td className="px-3 py-2">{t.reason ?? '—'}</td>
+                            <td className="px-3 py-2">{t.created_at ?? '—'}</td>
+                          </tr>
+                        ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              {(stockData?.stock_trackings ?? []).length > STOCK_PAGE_SIZE && (
+                <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                  <button type="button" disabled={trackingPage <= 1} onClick={() => setTrackingPage((p) => p - 1)} className="btn btn-secondary !py-1 !text-xs">Prev</button>
+                  <span>Page {trackingPage} of {Math.ceil((stockData?.stock_trackings?.length ?? 0) / STOCK_PAGE_SIZE)}</span>
+                  <button type="button" disabled={trackingPage >= Math.ceil((stockData?.stock_trackings?.length ?? 0) / STOCK_PAGE_SIZE)} onClick={() => setTrackingPage((p) => p + 1)} className="btn btn-secondary !py-1 !text-xs">Next</button>
+                </div>
+              )}
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   )
 }

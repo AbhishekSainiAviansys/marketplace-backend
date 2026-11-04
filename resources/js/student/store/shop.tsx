@@ -96,7 +96,7 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
     sku: v.sku == null ? null : String(v.sku),
   }))
   const specs = vals && vals.length
-    ? vals.map((v) => ({ label: String((v.field as any)?.field_label ?? v.field?.name ?? 'Spec'), value: String(v.value ?? '') }))
+    ? vals.map((v) => ({ label: String((v as any).field_name ?? (v.field as any)?.field_label ?? (v.field as any)?.field_name ?? v.field?.name ?? 'Spec'), value: String(v.value ?? '') }))
     : [{ label: 'Category', value: cat?.name ?? 'Book' }]
   if (!specs.some((s) => s.label === 'Category')) specs.unshift({ label: 'Category', value: cat?.name ?? 'Book' })
   return {

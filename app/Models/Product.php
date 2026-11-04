@@ -46,6 +46,30 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * Category fields (attribute definitions) for this product's category.
+     * Linked through products.category_id -> category_fields.category_id.
+     */
+    public function fields()
+    {
+        return $this->hasMany(CategoryField::class, 'category_id', 'category_id');
+    }
+
+    public function categoryFields()
+    {
+        return $this->fields();
+    }
+
+    /**
+     * Attributes actually filled for this product, with their stored value
+     * exposed on the pivot (value_text).
+     */
+    public function attributes()
+    {
+        return $this->belongsToMany(CategoryField::class, 'product_values', 'product_id', 'field_id')
+            ->withPivot('value_text');
+    }
+
     public function subCategory()
     {
         return $this->belongsTo(SubCategory::class);
