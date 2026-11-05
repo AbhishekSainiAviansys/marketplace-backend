@@ -133,8 +133,8 @@ export function Track() {
       ) : (
         <div className="card p-6 space-y-4">
           <div>
-            <p className="text-sm font-bold">{o.id ?? o.order_code} � <span className="tnum">{rupee(Number(o.total ?? 0))}</span></p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">{o.delivery} � {o.payMode ?? o.pay_mode}</p>
+            <p className="text-sm font-bold">{o.id ?? o.order_code} - <span className="tnum">{rupee(Number(o.total ?? 0))}</span></p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">{o.delivery} - {o.payMode ?? o.pay_mode}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="badge badge-ok">{status}</span>
               {(o.paymentStatus ?? o.payment_status) && <span className="badge badge-neutral">{o.paymentStatus ?? o.payment_status}</span>}

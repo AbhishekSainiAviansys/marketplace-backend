@@ -328,7 +328,7 @@ export function Categories() {
       {loading && rows.length === 0 ? (
         <div className="flex items-center justify-center gap-2 p-12 text-sm text-slate-500">
           <span className="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-emerald-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-5 w-5 bg-emerald-600" /> Loading categories�
+          <span className="relative inline-flex rounded-full h-5 w-5 bg-emerald-600" /> Loading categories ...
         </div>
       ) : filtered.length === 0 ? (
         <div className="p-8 text-center">
@@ -384,7 +384,7 @@ export function Categories() {
                       </button>
                     </td>
                     <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-700">{c.slug}</td>
-                    <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-700">{c.description ?? '�'}</td>
+                    <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-700">{c.description ?? 'No description available'}</td>
                     <td className="border-b border-slate-100 px-4 py-3 text-sm text-slate-700">{c.fields?.length ?? 0}</td>
                     <td className="border-b border-slate-100 px-4 py-3">
                       <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${badge(c.is_active)}`}>
@@ -612,7 +612,7 @@ export function Categories() {
       )}
 
       {fieldsCategoryId !== null && selectedCategory && (
-        <Modal title={`Fields � ${selectedCategory.name}`} sub="Manage the dynamic fields collected for products in this category." wide onClose={closeFields}>
+        <Modal title={`Fields for ${selectedCategory.name}`} sub="Manage the dynamic fields collected for products in this category." wide onClose={closeFields}>
           <div className="mt-2 space-y-5">
             <form onSubmit={submitField} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
               <div className="flex items-center justify-between">
@@ -730,7 +730,7 @@ export function Categories() {
                           <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">{f.field_name}</td>
                           <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">{f.field_type}</td>
                           <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">{f.is_required ? 'Yes' : 'No'}</td>
-                          <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">{(f.options ?? []).join(', ') || '�'}</td>
+                          <td className="border-b border-slate-100 px-3 py-2 text-xs text-slate-500">{(f.options ?? []).join(', ') || 'No options available'}</td>
                           <td className="border-b border-slate-100 px-3 py-2">
                             <div className="flex gap-1.5">
                               <button
