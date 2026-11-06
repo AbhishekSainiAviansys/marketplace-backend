@@ -81,11 +81,12 @@ function Shell() {
   else if (pathname === '/vendors') page = <Vendors />
   else if (pathname === '/products') page = <Products />
   else if (pathname === '/products/new') page = <ProductForm prefix={PREFIX} />
+  else if (/^\/products\/[A-Za-z0-9_-]+\/edit$/.test(pathname)) page = <ProductForm prefix={PREFIX} id={pathname.split('/')[2]} />
   else if (pathname === '/details') page = <InstituteDetails />
   else page = <NotFound path={pathname} />
 
   return (
-    <AppShell title={TITLES[pathname] ?? 'School panel'} nav={NAV}>
+    <AppShell title={TITLES[pathname] ?? (pathname.includes('/edit') ? 'Edit product' : 'School panel')} nav={NAV}>
       {page}
     </AppShell>
   )

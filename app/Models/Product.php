@@ -3,15 +3,16 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Schema;
 
 class Product extends Model
 {
-    protected $fillable = ['product_code', 'category_id', 'sub_category_id', 'created_by_type', 'created_by_id', 'added_by_role', 'added_by_id', 'school_id', 'vendor_id', 'name', 'sku', 'price', 'mrp', 'delivery_charge', 'portal_charge', 'server_charge', 'stock', 'delivery_mode', 'payment_split', 'is_active', 'is_boost', 'boost_until'];
+    protected $fillable = ['product_code', 'category_id', 'sub_category_id', 'created_by_type', 'created_by_id', 'added_by_role', 'added_by_id', 'school_id', 'vendor_id', 'name', 'sku', 'price', 'mrp', 'delivery_charge', 'portal_charge', 'server_charge', 'assignment_charge', 'stock', 'delivery_mode', 'payment_split', 'is_active', 'is_boost', 'boost_until'];
 
     protected $hidden = ['id'];
 
-    protected $casts = ['payment_split' => 'array', 'is_active' => 'boolean', 'is_variant' => 'boolean', 'is_boost' => 'boolean', 'boost_until' => 'datetime'];
+    protected $casts = ['payment_split' => 'array', 'is_active' => 'boolean', 'is_variant' => 'boolean', 'is_boost' => 'boolean', 'assignment_charge' => 'decimal:2', 'boost_until' => 'datetime'];
 
     public function getProductCodeAttribute($value)
     {
@@ -73,6 +74,16 @@ class Product extends Model
     public function subCategory()
     {
         return $this->belongsTo(SubCategory::class);
+    }
+
+    public function school(): BelongsTo
+    {
+        return $this->belongsTo(School::class);
+    }
+
+    public function vendor(): BelongsTo
+    {
+        return $this->belongsTo(Vendor::class);
     }
 
     public function values()

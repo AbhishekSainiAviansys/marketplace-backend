@@ -9,6 +9,7 @@ use App\Models\School;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vendor;
+use App\Models\BackAccount;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
@@ -99,6 +100,9 @@ class AuthController extends Controller
             'name' => $d['name'], 'email' => $email, 'whatsapp' => $whatsapp,
             'phone_country_code' => $code, 'phone_e164' => $whatsapp ? $code.$digits : null,
             'password' => Hash::make($d['password']), 'role' => $d['role'],
+        ]);
+        BackAccount::create([
+            'user_id' => $user->id,
         ]);
         if ($d['role'] === 'vendor') {
             Vendor::create(['user_id' => $user->id, 'shop_name' => $d['shop_name'], 'address_id' => $d['address_id'] ?? null,

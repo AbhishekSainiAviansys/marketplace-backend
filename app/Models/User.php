@@ -42,4 +42,10 @@ class User extends Authenticatable
     {
         return $this->hasMany(WishlistItem::class);
     }
+
+    /** Back account / Razorpay business account for this user. */
+    public function backAccounts()
+    {
+        return $this->hasOne(BackAccount::class);
+    }
 }

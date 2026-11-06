@@ -54,6 +54,11 @@ class ProductStockPersistenceTest extends TestCase
             $t->id();
             $t->unsignedBigInteger('category_id');
             $t->string('name', 120);
+            $t->string('slug')->nullable();
+            $t->string('portal_charge_type', 16)->default('fixed');
+            $t->decimal('portal_charge_value', 10, 2)->default(0);
+            $t->string('server_charge_type', 16)->default('fixed');
+            $t->decimal('server_charge_value', 10, 2)->default(0);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
         });
@@ -85,6 +90,9 @@ class ProductStockPersistenceTest extends TestCase
             $t->string('sku', 60)->nullable()->unique();
             $t->decimal('price', 10, 2);
             $t->decimal('mrp', 10, 2)->nullable();
+            $t->decimal('delivery_charge', 10, 2)->nullable();
+            $t->decimal('portal_charge', 10, 2)->nullable();
+            $t->decimal('server_charge', 10, 2)->nullable();
             $t->integer('stock')->default(0);
             $t->boolean('is_variant')->default(false);
             $t->string('delivery_mode', 20)->default('self');
@@ -147,6 +155,10 @@ class ProductStockPersistenceTest extends TestCase
             $t->unsignedBigInteger('user_id');
             $t->string('order_code', 32)->unique();
             $t->json('items');
+            $t->decimal('subtotal', 12, 2)->nullable();
+            $t->decimal('delivery_charge', 12, 2)->nullable();
+            $t->decimal('gst_rate', 6, 2)->nullable();
+            $t->decimal('gst_amount', 12, 2)->nullable();
             $t->decimal('total', 12, 2)->default(0);
             $t->string('pay_mode', 50)->nullable();
             $t->string('delivery', 100)->nullable();
@@ -195,10 +207,16 @@ class ProductStockPersistenceTest extends TestCase
     public function test_admin_product_store_persists_variant_stock_and_tracking(): void
     {
         $cat = Category::create(['name' => 'Books', 'slug' => 'books', 'is_active' => true]);
+        $subCategory = SubCategory::create([
+            'category_id' => $cat->id,
+            'name' => 'General books',
+            'slug' => 'general-books',
+        ]);
 
         $res = $this->withHeader('Authorization', 'Bearer '.$this->adminToken())
             ->postJson('/api/v1/admin/products', [
                 'category_id' => $cat->id,
+                'sub_category_id' => $subCategory->id,
                 'name' => 'Test Product',
                 'price' => 100,
                 'is_variant' => true,
@@ -273,10 +291,16 @@ class ProductStockPersistenceTest extends TestCase
     public function test_admin_simple_product_creates_one_stock_row_without_variant_options(): void
     {
         $cat = Category::create(['name' => 'Accessories', 'slug' => 'accessories', 'is_active' => true]);
+        $subCategory = SubCategory::create([
+            'category_id' => $cat->id,
+            'name' => 'Accessories',
+            'slug' => 'general-accessories',
+        ]);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$this->adminToken())
             ->postJson('/api/v1/admin/products', [
                 'category_id' => $cat->id,
+                'sub_category_id' => $subCategory->id,
                 'name' => 'Plain Notebook',
                 'price' => 80,
                 'is_variant' => false,
@@ -299,6 +323,21 @@ class ProductStockPersistenceTest extends TestCase
             'delta' => 7,
             'reason' => 'product_created',
         ]);
+    }
+
+    public function test_admin_product_create_requires_a_subcategory(): void
+    {
+        $category = Category::create(['name' => 'Books', 'slug' => 'required-subcategory-books', 'is_active' => true]);
+
+        $this->withHeader('Authorization', 'Bearer '.$this->adminToken())
+            ->postJson('/api/v1/admin/products', [
+                'category_id' => $category->id,
+                'name' => 'Workbook',
+                'price' => 100,
+            ])
+            ->assertInvalid(['sub_category_id']);
+
+        $this->assertDatabaseCount('products', 0);
     }
 
     public function test_student_order_decrements_the_selected_variant_and_tracks_ordered_stock(): void
@@ -581,5 +620,192 @@ class ProductStockPersistenceTest extends TestCase
         $this->assertCount(2, $stocks);
         $this->assertNotEmpty(collect($stocks)->firstWhere('colour', 'Red'));
         $this->assertNotEmpty(collect($stocks)->firstWhere('colour', 'Blue'));
+    }
+
+    public function test_admin_can_create_and_update_subcategory_charge_rules(): void
+    {
+        $category = Category::create(['name' => 'Books', 'slug' => 'charge-books', 'is_active' => true]);
+        $token = $this->adminToken();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/admin/sub-categories', [
+                'category_id' => $category->id,
+                'name' => 'Workbooks',
+                'slug' => 'workbooks',
+                'portal_charge_type' => 'percentage',
+                'portal_charge_value' => 5,
+                'server_charge_type' => 'fixed',
+                'server_charge_value' => 2.5,
+                'is_active' => true,
+            ]);
+
+        $response->assertCreated();
+        $subCategoryId = $response->json('id');
+        $this->assertDatabaseHas('sub_categories', [
+            'id' => $subCategoryId,
+            'portal_charge_type' => 'percentage',
+            'portal_charge_value' => '5.00',
+            'server_charge_type' => 'fixed',
+            'server_charge_value' => '2.50',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson('/api/v1/admin/sub-categories/'.$subCategoryId, [
+                'category_id' => $category->id,
+                'name' => 'Workbooks',
+                'slug' => 'workbooks',
+                'portal_charge_type' => 'fixed',
+                'portal_charge_value' => 4,
+                'server_charge_type' => 'percentage',
+                'server_charge_value' => 2,
+                'is_active' => true,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('sub_categories', [
+            'id' => $subCategoryId,
+            'portal_charge_type' => 'fixed',
+            'portal_charge_value' => '4.00',
+            'server_charge_type' => 'percentage',
+            'server_charge_value' => '2.00',
+        ]);
+    }
+
+    public function test_admin_subcategory_charge_rules_reject_invalid_types_and_values(): void
+    {
+        $category = Category::create(['name' => 'Books', 'slug' => 'invalid-charge-books', 'is_active' => true]);
+        $subCategory = SubCategory::create([
+            'category_id' => $category->id,
+            'name' => 'Workbooks',
+            'slug' => 'invalid-workbooks',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$this->adminToken())
+            ->putJson('/api/v1/admin/sub-categories/'.$subCategory->id, [
+                'portal_charge_type' => 'unknown',
+                'portal_charge_value' => -5,
+            ])
+            ->assertInvalid(['portal_charge_type', 'portal_charge_value']);
+
+        $this->assertDatabaseHas('sub_categories', [
+            'id' => $subCategory->id,
+            'portal_charge_type' => 'fixed',
+            'portal_charge_value' => '0.00',
+        ]);
+    }
+
+    public function test_admin_subcategory_slug_uniqueness_uses_normalized_value(): void
+    {
+        $category = Category::create(['name' => 'Books', 'slug' => 'slug-charge-books', 'is_active' => true]);
+        $token = $this->adminToken();
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/admin/sub-categories', [
+                'category_id' => $category->id,
+                'name' => 'Art books',
+                'slug' => 'Art Books',
+            ])
+            ->assertCreated();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/admin/sub-categories', [
+                'category_id' => $category->id,
+                'name' => 'Other books',
+                'slug' => 'ART BOOKS',
+            ])
+            ->assertInvalid(['slug']);
+    }
+
+    public function test_admin_product_create_and_update_calculate_subcategory_charges(): void
+    {
+        $category = Category::create(['name' => 'Books', 'slug' => 'product-charge-books', 'is_active' => true]);
+        $subCategory = SubCategory::create([
+            'category_id' => $category->id,
+            'name' => 'Workbooks',
+            'slug' => 'product-charge-workbooks',
+            'portal_charge_type' => 'percentage',
+            'portal_charge_value' => 5,
+            'server_charge_type' => 'fixed',
+            'server_charge_value' => 2.5,
+        ]);
+        $token = $this->adminToken();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/admin/products', [
+                'category_id' => $category->id,
+                'sub_category_id' => $subCategory->id,
+                'name' => 'Math Workbook',
+                'price' => 100,
+                'delivery_charge' => 0,
+                'portal_charge' => 900,
+                'server_charge' => 800,
+            ]);
+
+        $response->assertCreated();
+        $productId = Product::query()->value('id');
+        $this->assertDatabaseHas('products', [
+            'id' => $productId,
+            'price' => '100.00',
+            'portal_charge' => '5.00',
+            'server_charge' => '2.50',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->putJson('/api/v1/admin/products/'.$productId, [
+                'price' => 200,
+                'portal_charge' => 900,
+                'server_charge' => 800,
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('products', [
+            'id' => $productId,
+            'price' => '200.00',
+            'portal_charge' => '10.00',
+            'server_charge' => '2.50',
+        ]);
+    }
+
+    public function test_student_order_totals_include_saved_product_charges(): void
+    {
+        $student = User::create([
+            'name' => 'Charge Student',
+            'email' => 'charge.student@test.local',
+            'password' => bcrypt('secret'),
+            'role' => 'student',
+            'is_active' => true,
+        ]);
+        $category = Category::create(['name' => 'Books', 'slug' => 'order-charge-books', 'is_active' => true]);
+        $product = Product::create([
+            'category_id' => $category->id,
+            'created_by_type' => 'vendor',
+            'created_by_id' => 1,
+            'name' => 'Charged Workbook',
+            'price' => 100,
+            'portal_charge' => 5,
+            'server_charge' => 2.5,
+            'delivery_charge' => 0,
+            'stock' => 4,
+            'is_active' => true,
+        ]);
+        ProductStock::create(['product_id' => $product->id, 'quantity' => 4, 'stock' => 4, 'qty' => 4]);
+        $token = $student->createToken('test')->plainTextToken;
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/student/orders', [
+                'items' => [['id' => $product->id, 'qty' => 2, 'price' => 1]],
+                'total' => 2,
+                'pay_mode' => 'Cash on Delivery',
+                'delivery' => 'Home delivery',
+            ]);
+
+        $response->assertCreated();
+        $this->assertDatabaseHas('orders', [
+            'id' => $response->json('id'),
+            'subtotal' => '215.00',
+            'delivery_charge' => '0.00',
+            'gst_amount' => '38.70',
+            'total' => '253.70',
+        ]);
+        $this->assertSame(107.5, (float) $response->json('items.0.price'));
     }
 }

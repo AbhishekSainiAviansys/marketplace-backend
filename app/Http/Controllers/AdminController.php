@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class AdminController extends Controller
 {
@@ -474,15 +475,19 @@ class AdminController extends Controller
 
     public function subCategoryStore(Request $r)
     {
+        $r->merge(['slug' => Str::slug($r->input('slug') ?: $r->input('name', ''))]);
         $d = $r->validate([
             'category_id' => 'required|exists:categories,id',
             'name' => 'required|string|max:120',
-            'slug' => 'required|string',
+            'slug' => 'required|string|max:255|unique:sub_categories,slug',
             'description' => 'nullable|string',
             'icon' => 'nullable|string',
             'is_active' => 'boolean',
+            'portal_charge_type' => 'sometimes|in:fixed,percentage',
+            'portal_charge_value' => 'sometimes|numeric|min:0',
+            'server_charge_type' => 'sometimes|in:fixed,percentage',
+            'server_charge_value' => 'sometimes|numeric|min:0',
         ]);
-        $d['slug'] = Str::slug($d['slug'] ?: $d['name']);
 
         return SubCategory::create($d);
     }
@@ -490,13 +495,22 @@ class AdminController extends Controller
     public function subCategoryUpdate(Request $r, $id)
     {
         $sc = SubCategory::findOrFail($id);
-        $sc->update($r->only('name', 'description', 'icon', 'is_active'));
-        if ($r->has('slug')) {
-            $sc->slug = Str::slug($r->input('slug'));
+        if ($r->exists('slug')) {
+            $r->merge(['slug' => Str::slug($r->input('slug') ?: $r->input('name', $sc->name))]);
         }
-        if ($r->has('category_id')) {
-            $sc->category_id = $r->input('category_id');
-        }
+        $d = $r->validate([
+            'category_id' => 'sometimes|required|exists:categories,id',
+            'name' => 'sometimes|required|string|max:120',
+            'slug' => ['sometimes', 'required', 'string', 'max:255', Rule::unique('sub_categories', 'slug')->ignore($sc->id)],
+            'description' => 'sometimes|nullable|string',
+            'icon' => 'sometimes|nullable|string',
+            'is_active' => 'sometimes|boolean',
+            'portal_charge_type' => 'sometimes|in:fixed,percentage',
+            'portal_charge_value' => 'sometimes|numeric|min:0',
+            'server_charge_type' => 'sometimes|in:fixed,percentage',
+            'server_charge_value' => 'sometimes|numeric|min:0',
+        ]);
+        $sc->fill($d);
         $sc->save();
 
         return $sc;
@@ -557,21 +571,41 @@ class AdminController extends Controller
 
     public function productUpdate(Request $r, $id)
     {
+        $q = Product::with('values', 'images');
+        $p = is_numeric($id) ? $q->findOrFail($id) : $q->where('product_code', $id)->firstOrFail();
+        $originalCategoryId = (int) $p->category_id;
+        $categoryId = $r->input('category_id', $p->category_id);
         $r->validate([
+            'category_id' => 'sometimes|required|exists:categories,id',
+            'sub_category_id' => [
+                Rule::requiredIf($r->has('category_id') || $r->exists('sub_category_id')),
+                'integer',
+                Rule::exists('sub_categories', 'id')->where('category_id', $categoryId),
+            ],
+            'price' => 'sometimes|required|numeric|min:0',
             'product_stocks' => 'sometimes|array',
             'product_stocks.*.colour' => 'nullable|string|max:60',
             'product_stocks.*.color_code' => ['nullable', 'regex:/\A#[0-9A-Fa-f]{6}\z/'],
             'product_stocks.*.size' => 'nullable|string|max:60',
             'product_stocks.*.quantity' => 'nullable|integer|min:0',
         ]);
-        $q = Product::with('values', 'images');
-        $p = is_numeric($id) ? $q->findOrFail($id) : $q->where('product_code', $id)->firstOrFail();
 
-        $allowed = ['category_id', 'sub_category_id', 'name', 'sku', 'price', 'mrp', 'stock', 'is_variant', 'delivery_mode', 'delivery_charge', 'portal_charge', 'server_charge', 'payment_split', 'is_active', 'is_boost', 'boost_until'];
+        $allowed = ['category_id', 'sub_category_id', 'name', 'sku', 'price', 'mrp', 'stock', 'is_variant', 'delivery_mode', 'delivery_charge', 'payment_split', 'is_active', 'is_boost', 'boost_until'];
         foreach ($allowed as $field) {
             if ($r->has($field)) {
                 $p->{$field} = $r->input($field);
             }
+        }
+        if ($r->has('category_id') && ! $r->has('sub_category_id') && $originalCategoryId !== (int) $categoryId) {
+            $p->sub_category_id = null;
+        }
+        if ($r->hasAny(['price', 'sub_category_id', 'category_id'])) {
+            $subCategory = $p->sub_category_id
+                ? SubCategory::where('category_id', $p->category_id)->find($p->sub_category_id)
+                : null;
+            $charges = $subCategory?->calculateChargesFor((float) $p->price) ?? ['portal_charge' => 0, 'server_charge' => 0];
+            $p->portal_charge = $charges['portal_charge'];
+            $p->server_charge = $charges['server_charge'];
         }
         if ($r->has('boost_until') && ($r->input('boost_until') === '' || $r->input('boost_until') === null)) {
             $p->boost_until = null;
@@ -666,16 +700,14 @@ class AdminController extends Controller
     {
         $d = $r->validate([
             'category_id' => 'required|exists:categories,id',
-            'sub_category_id' => 'nullable|exists:sub_categories,id',
+            'sub_category_id' => ['required', 'integer', Rule::exists('sub_categories', 'id')->where('category_id', $r->input('category_id'))],
             'name' => 'required',
             'sku' => 'nullable|string',
-            'price' => 'required|numeric',
+            'price' => 'required|numeric|min:0',
             'mrp' => 'nullable|numeric',
             'stock' => 'integer',
             'delivery_mode' => 'in:self,thirdparty,school_pickup',
             'delivery_charge' => 'nullable|numeric',
-            'portal_charge' => 'nullable|numeric',
-            'server_charge' => 'nullable|numeric',
             'school_id' => 'nullable|exists:schools,id',
             'vendor_id' => 'nullable|exists:vendors,id',
             'fields' => 'array',
@@ -692,6 +724,10 @@ class AdminController extends Controller
             'product_stocks.*.quantity' => 'nullable|integer|min:0',
         ]);
         unset($d['product_stocks']);
+        $subCategory = ! empty($d['sub_category_id']) ? SubCategory::find($d['sub_category_id']) : null;
+        $charges = $subCategory?->calculateChargesFor((float) $d['price']) ?? ['portal_charge' => 0, 'server_charge' => 0];
+        $d['portal_charge'] = $charges['portal_charge'];
+        $d['server_charge'] = $charges['server_charge'];
         $p = Product::create($d + ['created_by_type' => $type, 'created_by_id' => $id]);
         foreach (($d['fields'] ?? []) as $fid => $val) {
             ProductValue::create(['product_id' => $p->id, 'field_id' => $fid, 'value_text' => $val]);

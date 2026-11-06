@@ -159,10 +159,12 @@ Route::prefix('v1')->group(function () {
             Route::middleware('approved')->group(function () {
                 Route::get('dashboard', [VendorController::class, 'dashboard']);
                 Route::get('products', [VendorController::class, 'index']);
+                Route::get('products/{id}', [VendorController::class, 'productShow']);
                 Route::post('products', [VendorController::class, 'store']);
                 Route::put('products/{id}', [VendorController::class, 'update']);
                 Route::delete('products/{id}', [VendorController::class, 'destroy']);
                 Route::get('schools', [VendorController::class, 'schools']);
+                Route::get('sub-categories', [VendorController::class, 'subCategories']);
                 Route::get('royalties', [VendorController::class, 'royalties']);
             });
         });
@@ -198,9 +200,11 @@ Route::prefix('v1')->group(function () {
                 Route::get('vendors', [SchoolController::class, 'vendors']);
                 Route::get('catalog', [SchoolController::class, 'catalog']);
                 Route::get('products', [SchoolController::class, 'index']);
+                Route::get('products/{id}', [SchoolController::class, 'productShow']);
                 Route::post('products', [SchoolController::class, 'store']);
                 Route::put('products/{id}', [SchoolController::class, 'update']);
                 Route::delete('products/{id}', [SchoolController::class, 'destroy']);
+                Route::get('sub-categories', [SchoolController::class, 'subCategories']);
                 Route::get('details', [SchoolController::class, 'details']);
                 Route::put('details', [SchoolController::class, 'updateDetails']);
                 // Per-row add/update/delete (same tables the bulk PUT covers).
@@ -262,8 +266,6 @@ Route::prefix('v1')->group(function () {
             Route::post('payments/razorpay/cancel', [PaymentController::class, 'cancel']);
         });
         Route::prefix('school')->middleware('role:school')->group(function () {
-            Route::get('products', [SchoolController::class, 'products']);
-            Route::get('products/{id}', [SchoolController::class, 'productShow']);
             Route::post('orders', [SchoolController::class, 'orderStore']);
             Route::get('order-ledger', [SchoolController::class, 'orderLedger']);
         });

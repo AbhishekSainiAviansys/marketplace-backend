@@ -1,16 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { PlusCircle, Trash2 } from 'lucide-react'
+import { Pencil, PlusCircle, Trash2 } from 'lucide-react'
 import { api, errMsg, metaOf, rowsOf } from '@lib/api'
 import { Alert, Button, EmptyState, PageHeader, Panel, Skeleton } from '@ui'
 
 type Product = {
-  id: number
+  id?: number
+  product_code?: string
   name: string
   price?: number | string
+  portal_charge?: number | string | null
+  server_charge?: number | string | null
+  assignment_charge?: number | string | null
   stock?: number
   delivery_mode?: string
   category?: { name?: string }
+  sub_category?: { name?: string } | null
+  school?: { name?: string } | null
 }
 
 type Onboarding = {
@@ -61,7 +67,7 @@ export function Products() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
-  const [busyId, setBusyId] = useState<number | null>(null)
+  const [busyId, setBusyId] = useState<string | number | null>(null)
   const [profileComplete, setProfileComplete] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
@@ -97,12 +103,12 @@ export function Products() {
     return () => { alive = false }
   }, [])
 
-  const remove = async (id: number) => {
+  const remove = async (productKey: string | number) => {
     if (!confirm('Delete this product? This cannot be undone.')) return
-    setBusyId(id)
+    setBusyId(productKey)
     setErr('')
     try {
-      await api.delete(`/vendor/products/${id}`)
+      await api.delete(`/vendor/products/${productKey}`)
       await load()
     } catch (e) {
       setErr(errMsg(e, 'Delete failed'))
@@ -176,12 +182,15 @@ export function Products() {
                 </thead>
                 <tbody>
                   {rows.map((p) => (
-                    <tr key={p.id} className="row-hover">
-                      <td className="td font-medium">{p.name}</td>
+                    <tr key={p.product_code ?? p.id} className="row-hover">
+                      <td className="td font-medium">{p.name}<span className="block text-xs text-[var(--text-muted)]">{p.sub_category?.name ?? '—'}</span></td>
                       <td className="td text-[var(--text-muted)]">{p.category?.name ?? '—'}</td>
                       <td className="td text-[var(--text-muted)]">
                         {DELIVERY[p.delivery_mode ?? ''] ?? '—'}
                       </td>
+                      <td className="td text-[var(--text-muted)]">{p.school?.name ?? '—'}</td>
+                      <td className="td tnum text-right text-[var(--text-muted)]">₹{Number(p.portal_charge ?? 0).toFixed(2)} / ₹{Number(p.server_charge ?? 0).toFixed(2)}</td>
+                      <td className="td tnum text-right text-[var(--text-muted)]">₹{Number(p.assignment_charge ?? 0).toFixed(2)}</td>
                       <td className="td tnum text-right">₹{Number(p.price ?? 0).toFixed(2)}</td>
                       <td className="td tnum text-right">
                         <span className={`badge ${(p.stock ?? 0) > 0 ? 'badge-ok' : 'badge-danger'}`}>
@@ -189,15 +198,20 @@ export function Products() {
                         </span>
                       </td>
                       <td className="td text-right">
+                        <div className="flex justify-end gap-1">
+                        <Link to={`/products/${p.product_code ?? p.id}/edit`}>
+                          <Button variant="ghost" aria-label={`Edit ${p.name}`}><Pencil className="h-4 w-4" /></Button>
+                        </Link>
                         <Button
                           variant="ghost"
                           aria-label={`Delete ${p.name}`}
-                          disabled={busyId === p.id}
-                          onClick={() => remove(p.id)}
+                          disabled={busyId === (p.product_code ?? p.id)}
+                          onClick={() => void remove(p.product_code ?? p.id ?? '')}
                           className="text-[var(--color-danger-600)] hover:bg-[var(--color-danger-50)]"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -208,7 +222,7 @@ export function Products() {
             {/* Mobile cards - a 6-column table cannot fit a phone */}
             <ul className="divide-y divide-[var(--border)] md:hidden">
               {rows.map((p) => (
-                <li key={p.id} className="p-4">
+                <li key={p.product_code ?? p.id} className="p-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold text-[var(--text)]">{p.name}</p>
@@ -217,25 +231,17 @@ export function Products() {
                         {DELIVERY[p.delivery_mode ?? ''] ?? '—'}
                       </p>
                     </div>
-                    <span
-                      className={`badge shrink-0 ${(p.stock ?? 0) > 0 ? 'badge-ok' : 'badge-danger'}`}
-                    >
-                      {p.stock ?? 0} in stock
-                    </span>
+                    <span className={`badge shrink-0 ${(p.stock ?? 0) > 0 ? 'badge-ok' : 'badge-danger'}`}>{p.stock ?? 0} in stock</span>
                   </div>
+                  <p className="mt-1 text-xs text-[var(--text-muted)]">School: {p.school?.name ?? '—'} · Portal ₹{Number(p.portal_charge ?? 0).toFixed(2)} · Server ₹{Number(p.server_charge ?? 0).toFixed(2)} · Assigned ₹{Number(p.assignment_charge ?? 0).toFixed(2)}</p>
                   <div className="mt-3 flex items-center justify-between">
                     <span className="tnum text-lg font-bold text-[var(--text)]">
                       ₹{Number(p.price ?? 0).toFixed(2)}
                     </span>
-                    <Button
-                      variant="ghost"
-                      aria-label={`Delete ${p.name}`}
-                      disabled={busyId === p.id}
-                      onClick={() => remove(p.id)}
-                      className="text-[var(--color-danger-600)] hover:bg-[var(--color-danger-50)]"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex gap-1">
+                      <Link to={`/products/${p.product_code ?? p.id}/edit`}><Button variant="ghost" aria-label={`Edit ${p.name}`}><Pencil className="h-4 w-4" /></Button></Link>
+                      <Button variant="ghost" aria-label={`Delete ${p.name}`} disabled={busyId === (p.product_code ?? p.id)} onClick={() => void remove(p.product_code ?? p.id ?? '')} className="text-[var(--color-danger-600)] hover:bg-[var(--color-danger-50)]"><Trash2 className="h-4 w-4" /></Button>
+                    </div>
                   </div>
                 </li>
               ))}

@@ -106,6 +106,8 @@ class StorefrontCatalogTest extends TestCase
             $t->string('sku', 60)->nullable()->unique();
             $t->decimal('price', 10, 2);
             $t->decimal('mrp', 10, 2)->nullable();
+            $t->decimal('portal_charge', 10, 2)->nullable();
+            $t->decimal('server_charge', 10, 2)->nullable();
             $t->integer('stock')->default(0);
             $t->string('delivery_mode', 20)->default('self');
             $t->text('payment_split')->nullable();
@@ -177,6 +179,20 @@ class StorefrontCatalogTest extends TestCase
         $res->assertOk();
         $res->assertJsonStructure(['data', 'current_page', 'last_page', 'total']);
         $this->assertSame(1, $res->json('total'));
+    }
+
+    public function test_storefront_uses_adjusted_price_without_exposing_internal_charges(): void
+    {
+        $categoryId = $this->makeCategory('Book', 'charge-book');
+        $productId = $this->makeProduct($categoryId, 'Charged Workbook');
+        Product::findOrFail($productId)->update(['portal_charge' => 5, 'server_charge' => 2.5]);
+
+        $response = $this->getJson('/api/v1/products?per_page=5');
+
+        $response->assertOk()
+            ->assertJsonMissingPath('data.0.portal_charge')
+            ->assertJsonMissingPath('data.0.server_charge');
+        $this->assertSame(107.5, (float) $response->json('data.0.price'));
     }
 
     public function test_product_detail_resolves_product_code_and_returns_current_stock_rows(): void

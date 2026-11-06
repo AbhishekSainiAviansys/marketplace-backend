@@ -5,6 +5,14 @@ import { api, errMsg } from '@lib/api'
 import { useToast } from '@ui'
 
 type Cat = { id: number; name: string }
+type ChargeMode = 'fixed' | 'percentage'
+type SubCategoryConfig = Cat & {
+  portal_charge_type: ChargeMode
+  portal_charge_value: number | string
+  server_charge_type: ChargeMode
+  server_charge_value: number | string
+}
+type AssignmentOption = { id: number; name: string }
 type CatField = {
   id: number
   field_name: string
@@ -13,6 +21,11 @@ type CatField = {
   options: string[] | null
   is_required: number | boolean
   sort_order?: number
+}
+
+const calculateCharge = (basePrice: number, mode: ChargeMode | undefined, value: number | string | undefined) => {
+  const amount = mode === 'percentage' ? basePrice * Number(value ?? 0) / 100 : Number(value ?? 0)
+  return Math.round((amount + Number.EPSILON) * 100) / 100
 }
 
 // Step1: pick ONE category -> Step2: dynamic fields (diagram requirement)
@@ -24,18 +37,32 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const toast = useToast()
   const [cats, setCats] = useState<Cat[]>([])
   const [catId, setCatId] = useState('')
+  const [subCats, setSubCats] = useState<SubCategoryConfig[]>([])
+  const [subCategoryId, setSubCategoryId] = useState('')
+  const [assignmentOptions, setAssignmentOptions] = useState<AssignmentOption[]>([])
+  const [assignToSchool, setAssignToSchool] = useState(false)
+  const [schoolId, setSchoolId] = useState('')
+  const [assignmentCharge, setAssignmentCharge] = useState('0')
   const [fields, setFields] = useState<CatField[]>([])
-  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', portal_charge: '', server_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '' })
+  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '' })
   const [vals, setVals] = useState<Record<string, string>>({})
   const [images, setImages] = useState<string[]>([])
   const mrpNum = Number(form.mrp || 0)
   const priceNum = Number(form.price || 0)
-  const discountAmount = mrpNum > priceNum && mrpNum > 0 ? mrpNum - priceNum : 0
+  const selectedSubCategory = subCats.find((subCategory) => String(subCategory.id) === subCategoryId)
+  const portalCharge = selectedSubCategory
+    ? calculateCharge(priceNum, selectedSubCategory.portal_charge_type, selectedSubCategory.portal_charge_value)
+    : 0
+  const serverCharge = selectedSubCategory
+    ? calculateCharge(priceNum, selectedSubCategory.server_charge_type, selectedSubCategory.server_charge_value)
+    : 0
+  const studentPrice = Math.round((priceNum + portalCharge + serverCharge + Number.EPSILON) * 100) / 100
+  const discountAmount = mrpNum > studentPrice && mrpNum > 0 ? mrpNum - studentPrice : 0
   const discountPercent = mrpNum > 0 ? Math.round((discountAmount / mrpNum) * 100) : 0
-  const estimatedDeliveryCharge = form.delivery_mode === 'school_pickup' ? 0 : form.delivery_mode === 'thirdparty' ? 99 : (priceNum >= 999 ? 0 : 49)
+  const estimatedDeliveryCharge = form.delivery_mode === 'school_pickup' ? 0 : form.delivery_mode === 'thirdparty' ? 99 : (studentPrice >= 999 ? 0 : 49)
   const deliveryChargeInput = form.delivery_charge === '' ? null : Number(form.delivery_charge)
   const deliveryCharge = deliveryChargeInput === null || Number.isNaN(deliveryChargeInput) ? estimatedDeliveryCharge : deliveryChargeInput
-  const payableAmount = priceNum + deliveryCharge
+  const payableAmount = studentPrice + deliveryCharge
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -53,12 +80,36 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   }, [])
 
   useEffect(() => {
+    if (!catId) {
+      setSubCats([])
+      return
+    }
+    api.get<SubCategoryConfig[]>(`/${prefix}/sub-categories`, { params: { category_id: catId } })
+      .then(({ data }) => setSubCats(data))
+      .catch(() => setSubCats([]))
+  }, [catId, prefix])
+
+  useEffect(() => {
+    let active = true
+    api.get<Record<string, unknown>[]>(`/${prefix}/schools`)
+      .then(({ data }) => {
+        if (active) setAssignmentOptions(data.map((school) => ({ id: Number(school.id), name: String(school.name ?? '') })))
+      })
+      .catch(() => { if (active) setAssignmentOptions([]) })
+    return () => { active = false }
+  }, [prefix])
+
+  useEffect(() => {
     if (!id) return
     api
       .get(`/${prefix}/products/${id}`)
       .then(async (r) => {
         const p = r.data
         setCatId(p.category_id ? String(p.category_id) : '')
+        setSubCategoryId(p.sub_category_id ? String(p.sub_category_id) : '')
+        setAssignToSchool(Boolean(p.school_id))
+        setSchoolId(p.school_id ? String(p.school_id) : '')
+        setAssignmentCharge(String(p.assignment_charge ?? 0))
         if (p.category_id) {
           try {
             const { data } = await api.get(`/categories/${p.category_id}/fields`)
@@ -72,8 +123,6 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
           price: p.price ?? '',
           mrp: p.mrp ?? '',
           delivery_charge: p.delivery_charge ?? '',
-          portal_charge: p.portal_charge ?? '',
-          server_charge: p.server_charge ?? '',
           stock: p.stock ?? 0,
           delivery_mode: p.delivery_mode ?? 'self',
           is_boost: !!p.is_boost,
@@ -90,6 +139,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const pick = async (id: string) => {
     setCatId(id)
     setVals({})
+    setSubCategoryId('')
     if (!id) {
       setFields([])
       return
@@ -135,13 +185,15 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
       const payload = {
         ...form,
         category_id: Number(catId),
+        sub_category_id: Number(subCategoryId),
+        assign_to_school: assignToSchool,
+        school_id: assignToSchool ? Number(schoolId) : null,
+        assignment_charge: assignToSchool ? Number(assignmentCharge) : 0,
         fields: vals,
         images,
         is_boost: form.is_boost,
         boost_until: form.boost_until || null,
         delivery_charge: form.delivery_charge === '' ? null : Number(form.delivery_charge),
-        portal_charge: form.portal_charge === '' ? null : Number(form.portal_charge),
-        server_charge: form.server_charge === '' ? null : Number(form.server_charge),
       }
       if (isEdit && id) {
         await api.put(`/${prefix}/products/${id}`, payload)
@@ -172,7 +224,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         <button
           type="submit"
           form="product-form"
-          disabled={busy || catId === ''}
+          disabled={busy || catId === '' || subCategoryId === '' || (assignToSchool && schoolId === '')}
           className="accent-bg flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? (
@@ -198,7 +250,40 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
       </label>
 
       {catId && (
+        <label className="mt-3 block">
+          <span className="mb-1 block text-sm font-medium text-slate-700">Sub-category <span className="text-red-500">(required)*</span></span>
+          <select form="product-form" required value={subCategoryId} onChange={(e) => setSubCategoryId(e.target.value)} className="field focus:field-focus outline-none">
+            <option value="">-- choose a sub-category --</option>
+            {subCats.map((subCategory) => <option key={subCategory.id} value={subCategory.id}>{subCategory.name}</option>)}
+          </select>
+          {subCats.length === 0 && <span className="mt-1 block text-xs text-red-600">No subcategories configured for this category.</span>}
+        </label>
+      )}
+
+      {catId && (
         <form id="product-form" onSubmit={save} className="mt-4 space-y-3 border-t border-slate-100 pt-4">
+          <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={assignToSchool} onChange={(e) => { setAssignToSchool(e.target.checked); if (!e.target.checked) { setSchoolId(''); setAssignmentCharge('0') } }} className="rounded border-slate-300 text-accent" />
+              <span className="text-sm font-medium text-slate-700">Assign this product to a linked school</span>
+            </label>
+            {assignToSchool && (
+              <>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-700">Linked school</span>
+                  <select required value={schoolId} onChange={(e) => setSchoolId(e.target.value)} className="field !py-2 !text-sm">
+                    <option value="">-- choose a linked school --</option>
+                    {assignmentOptions.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}
+                  </select>
+                  {assignmentOptions.length === 0 && <span className="mt-1 block text-xs text-slate-500">No active linked schools are available.</span>}
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-700">Assigned school charge per piece (internal)</span>
+                  <input type="number" min="0" step="0.01" required value={assignmentCharge} onChange={(e) => setAssignmentCharge(e.target.value)} className="field !py-2 !text-sm" />
+                </label>
+              </>
+            )}
+          </div>
           <label className="block">
             <span className="mb-1.5 block text-sm font-medium text-slate-700">Product name</span>
             <input
@@ -269,30 +354,6 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               value={form.delivery_charge}
               onChange={(e) => setForm({ ...form, delivery_charge: e.target.value })}
               placeholder="Leave blank to estimate"
-              className="field focus:field-focus outline-none"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Portal charge (optional, included in price, internal)</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.portal_charge}
-              onChange={(e) => setForm({ ...form, portal_charge: e.target.value })}
-              placeholder="Leave blank if none"
-              className="field focus:field-focus outline-none"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Server charge (optional, included in price, internal)</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.server_charge}
-              onChange={(e) => setForm({ ...form, server_charge: e.target.value })}
-              placeholder="Leave blank if none"
               className="field focus:field-focus outline-none"
             />
           </label>
@@ -372,12 +433,16 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               <p className="mb-3 text-sm font-semibold text-slate-800">Price breakdown</p>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between"><span className="text-slate-500">MRP</span><span className="tnum font-medium">₹{mrpNum.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Discounted price</span><span className="tnum font-medium">₹{priceNum.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Base discounted price</span><span className="tnum font-medium">₹{priceNum.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Portal charge</span><span className="tnum font-medium">₹{portalCharge.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Server charge</span><span className="tnum font-medium">₹{serverCharge.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Price shown to students</span><span className="tnum font-medium">₹{studentPrice.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Assigned school charge (internal)</span><span className="tnum font-medium">₹{Number(assignmentCharge || 0).toFixed(2)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Discount</span><span className="tnum font-medium">₹{discountAmount.toFixed(2)} ({discountPercent}%)</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Delivery charge</span><span className="tnum font-medium">{deliveryCharge === 0 ? 'FREE' : `₹${deliveryCharge.toFixed(2)}`}</span></div>
                 <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold"><span>Payable amount</span><span className="tnum">₹{payableAmount.toFixed(2)}</span></div>
               </div>
-              {mrpNum > 0 && priceNum > mrpNum && (
+              {mrpNum > 0 && studentPrice > mrpNum && (
                 <p className="mt-2 text-xs font-medium text-red-500">Discounted price cannot exceed MRP.</p>
               )}
             </div>

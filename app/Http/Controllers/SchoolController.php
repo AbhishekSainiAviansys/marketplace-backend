@@ -7,8 +7,11 @@ use App\Models\InstitutePortfolio;
 use App\Models\Product;
 use App\Models\ProductImage;
 use App\Models\ProductValue;
+use App\Models\SubCategory;
 use App\Models\TutorEducation;
+use App\Models\Vendor;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class SchoolController extends Controller
 {
@@ -26,7 +29,7 @@ class SchoolController extends Controller
 
     public function vendors(Request $r)
     {
-        return $r->user()->school->vendors()->withPivot('royalty_percent')->get();
+        return $r->user()->school->vendors()->wherePivot('is_active', true)->withPivot('royalty_percent', 'is_active')->get();
     }
 
     public function connectVendor(Request $r)
@@ -54,13 +57,67 @@ class SchoolController extends Controller
     {
         $this->mustIndependent($r);
 
-        return Product::where('school_id', $r->user()->school->id)->with('category', 'values')->paginate(20);
+        return Product::where('school_id', $r->user()->school->id)
+            ->with('category', 'subCategory', 'vendor', 'values')
+            ->paginate(20);
+    }
+
+    public function productShow(Request $r, $id)
+    {
+        $this->mustIndependent($r);
+        $query = Product::where('school_id', $r->user()->school->id)
+            ->with('category', 'subCategory', 'vendor', 'values', 'images');
+
+        return response()->json(is_numeric($id)
+            ? $query->findOrFail($id)
+            : $query->where('product_code', (string) $id)->firstOrFail());
+    }
+
+    public function subCategories(Request $r)
+    {
+        $data = $r->validate(['category_id' => 'required|exists:categories,id']);
+
+        return SubCategory::where('category_id', $data['category_id'])
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
     }
 
     public function store(Request $r)
     {
         $this->mustIndependent($r);
-        $d = $r->validate(['category_id' => 'required|exists:categories,id', 'name' => 'required', 'price' => 'required|numeric', 'mrp' => 'nullable|numeric', 'delivery_charge' => 'nullable|numeric', 'portal_charge' => 'nullable|numeric', 'server_charge' => 'nullable|numeric', 'stock' => 'integer', 'delivery_mode' => 'in:self,thirdparty,school_pickup', 'fields' => 'array', 'images' => 'nullable', 'image' => 'nullable', 'image_url' => 'nullable', 'primary_image' => 'nullable']);
+        $school = $r->user()->school;
+        $assignToVendor = $r->has('assign_to_vendor') ? $r->boolean('assign_to_vendor') : $r->filled('vendor_id');
+        $d = $r->validate([
+            'category_id' => 'required|exists:categories,id',
+            'sub_category_id' => ['required', 'integer', Rule::exists('sub_categories', 'id')->where('category_id', $r->input('category_id'))->where('is_active', true)],
+            'name' => 'required|string|max:190',
+            'price' => 'required|numeric|min:0',
+            'mrp' => 'nullable|numeric|min:0',
+            'delivery_charge' => 'nullable|numeric|min:0',
+            'stock' => 'nullable|integer|min:0',
+            'delivery_mode' => 'nullable|in:self,thirdparty,school_pickup',
+            'assign_to_vendor' => 'sometimes|boolean',
+            'vendor_id' => [
+                Rule::requiredIf($assignToVendor),
+                'nullable',
+                'integer',
+                Rule::exists('school_vendor', 'vendor_id')->where('school_id', $school->id)->where('is_active', true),
+            ],
+            'assignment_charge' => 'nullable|numeric|min:0',
+            'fields' => 'sometimes|array',
+            'images' => 'nullable',
+            'image' => 'nullable',
+            'image_url' => 'nullable',
+            'primary_image' => 'nullable',
+        ]);
+        unset($d['assign_to_vendor']);
+        $d['vendor_id'] = $assignToVendor ? (int) $d['vendor_id'] : null;
+        $d['assignment_charge'] = $assignToVendor ? (float) ($d['assignment_charge'] ?? 0) : 0;
+        $subCategory = SubCategory::findOrFail($d['sub_category_id']);
+        $charges = $subCategory->calculateChargesFor((float) $d['price']);
+        $d['portal_charge'] = $charges['portal_charge'];
+        $d['server_charge'] = $charges['server_charge'];
         $imageUrls = $this->productImageUrls($d);
         foreach (['images', 'image', 'image_url', 'primary_image'] as $imageKey) {
             unset($d[$imageKey]);
@@ -68,7 +125,7 @@ class SchoolController extends Controller
         if (empty($imageUrls)) {
             return response()->json(['message' => 'At least one product image with no background is required.'], 422);
         }
-        $p = Product::create($d + ['created_by_type' => 'school', 'created_by_id' => $r->user()->school->id, 'school_id' => $r->user()->school->id]);
+        $p = Product::create($d + ['created_by_type' => 'school', 'created_by_id' => $school->id, 'school_id' => $school->id]);
         foreach (($d['fields'] ?? []) as $fid => $val) {
             ProductValue::create(['product_id' => $p->id, 'field_id' => $fid, 'value_text' => $val]);
         }
@@ -82,11 +139,73 @@ class SchoolController extends Controller
     public function update(Request $r, $id)
     {
         $this->mustIndependent($r);
-        $q = Product::where('school_id', $r->user()->school->id);
+        $school = $r->user()->school;
+        $q = Product::where('school_id', $school->id);
         $p = is_numeric($id) ? $q->findOrFail($id) : $q->where('product_code', $id)->firstOrFail();
-        $p->update($r->only('name', 'price', 'mrp', 'delivery_charge', 'portal_charge', 'server_charge', 'stock', 'is_active'));
+        $categoryId = $r->input('category_id', $p->category_id);
+        $assignmentSubmitted = $r->hasAny(['assign_to_vendor', 'vendor_id', 'assignment_charge']);
+        $assignToVendor = $r->has('assign_to_vendor') ? $r->boolean('assign_to_vendor') : ($r->has('vendor_id') ? $r->filled('vendor_id') : (bool) $p->vendor_id);
+        $d = $r->validate([
+            'category_id' => 'sometimes|required|exists:categories,id',
+            'sub_category_id' => ['sometimes', 'required', 'integer', Rule::exists('sub_categories', 'id')->where('category_id', $categoryId)->where('is_active', true)],
+            'name' => 'sometimes|required|string|max:190',
+            'price' => 'sometimes|required|numeric|min:0',
+            'mrp' => 'sometimes|nullable|numeric|min:0',
+            'delivery_charge' => 'sometimes|nullable|numeric|min:0',
+            'stock' => 'sometimes|nullable|integer|min:0',
+            'delivery_mode' => 'sometimes|nullable|in:self,thirdparty,school_pickup',
+            'is_active' => 'sometimes|boolean',
+            'fields' => 'sometimes|array',
+            'images' => 'sometimes|nullable',
+            'image' => 'sometimes|nullable',
+            'image_url' => 'sometimes|nullable',
+            'primary_image' => 'sometimes|nullable',
+            'assign_to_vendor' => 'sometimes|boolean',
+            'vendor_id' => [
+                Rule::requiredIf($assignmentSubmitted && $assignToVendor && ! $p->vendor_id),
+                'nullable',
+                'integer',
+                Rule::exists('school_vendor', 'vendor_id')->where('school_id', $school->id)->where('is_active', true),
+            ],
+            'assignment_charge' => 'sometimes|nullable|numeric|min:0',
+        ]);
+        $p->fill(collect($d)->only(['category_id', 'sub_category_id', 'name', 'price', 'mrp', 'delivery_charge', 'stock', 'delivery_mode', 'is_active'])->all());
+        if ($assignmentSubmitted) {
+            if ($assignToVendor) {
+                if ($r->filled('vendor_id')) {
+                    $p->vendor_id = (int) $d['vendor_id'];
+                }
+                $p->assignment_charge = (float) ($d['assignment_charge'] ?? $p->assignment_charge ?? 0);
+            } else {
+                $p->vendor_id = null;
+                $p->assignment_charge = 0;
+            }
+        }
+        if ($r->hasAny(['price', 'category_id', 'sub_category_id'])) {
+            $subCategory = SubCategory::where('category_id', $p->category_id)->findOrFail($p->sub_category_id);
+            $charges = $subCategory->calculateChargesFor((float) $p->price);
+            $p->portal_charge = $charges['portal_charge'];
+            $p->server_charge = $charges['server_charge'];
+        }
+        $p->save();
+        if ($r->has('fields')) {
+            ProductValue::where('product_id', $p->id)->delete();
+            foreach (($d['fields'] ?? []) as $fieldId => $value) {
+                ProductValue::create(['product_id' => $p->id, 'field_id' => $fieldId, 'value_text' => $value]);
+            }
+        }
+        if ($r->hasAny(['images', 'image', 'image_url', 'primary_image'])) {
+            $imageUrls = $this->productImageUrls($r->only('images', 'image', 'image_url', 'primary_image'));
+            if (empty($imageUrls)) {
+                return response()->json(['message' => 'At least one product image with no background is required.'], 422);
+            }
+            ProductImage::where('product_id', $p->id)->delete();
+            foreach ($imageUrls as $i => $url) {
+                ProductImage::create(['product_id' => $p->id, 'url' => $url, 'is_primary' => $i === 0]);
+            }
+        }
 
-        return $p;
+        return $p->fresh()->load('category', 'subCategory', 'vendor', 'values', 'images');
     }
 
     public function destroy(Request $r, $id)

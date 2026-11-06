@@ -31,6 +31,14 @@ class OrderService
         return $q->where('product_code', (string) $key)->first();
     }
 
+    private function customerUnitPrice(Product $product): float
+    {
+        return round(
+            (float) $product->price + (float) ($product->portal_charge ?? 0) + (float) ($product->server_charge ?? 0),
+            2,
+        );
+    }
+
     /**
      * Create an order transactionally: validate + decrement stock, persist the
      * order (with optional payment metadata), and clear the user's cart.
@@ -53,7 +61,7 @@ class OrderService
                 if ($product) {
                     $it['product_code'] = $product->product_code;
                     $it['name'] = $product->name;
-                    $it['price'] = (float) $product->price;
+                    $it['price'] = $this->customerUnitPrice($product);
                 } elseif ($key !== null && empty($it['product_code'])) {
                     $it['product_code'] = (string) $key;
                 }
@@ -104,7 +112,7 @@ class OrderService
                 if (empty($it['price']) && ! empty($it['product_code'])) {
                     $product = $this->findProduct($it['product_code']);
                     if ($product) {
-                        $price = (float) $product->price;
+                        $price = $this->customerUnitPrice($product);
                     }
                 }
                 $subtotal += $qty * $price;

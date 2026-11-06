@@ -226,8 +226,8 @@ export function ProductDetails({ id }: { id: string }) {
               )}
               <div>
                 <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Price</h3>
-                <p className="text-sm font-semibold text-[var(--text)]">?{Number(product.price ?? 0).toFixed(2)}</p>
-                <p className="text-xs text-[var(--text-muted)]">MRP ?{Number(product.mrp ?? 0).toFixed(2)}</p>
+                <p className="text-sm font-semibold text-[var(--text)]">₹{Number(product.price ?? 0).toFixed(2)}</p>
+                <p className="text-xs text-[var(--text-muted)]">MRP ₹{Number(product.mrp ?? 0).toFixed(2)}</p>
               </div>
               <div>
                 <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Stock</h3>

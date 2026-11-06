@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Lock, PlusCircle, Trash2 } from 'lucide-react'
+import { Lock, Pencil, PlusCircle, Trash2 } from 'lucide-react'
 import { api, errMsg, metaOf, rowsOf } from '@lib/api'
 import { Alert, Button, EmptyState, PageHeader, Panel, Skeleton } from '@ui'
 
 type Product = {
-  id: number
+  id?: number
+  product_code?: string
   name: string
   price?: number | string
+  portal_charge?: number | string | null
+  server_charge?: number | string | null
+  assignment_charge?: number | string | null
   stock?: number
   category?: { name?: string }
+  sub_category?: { name?: string } | null
+  vendor?: { shop_name?: string } | null
 }
 
 export function Products() {
@@ -19,7 +25,7 @@ export function Products() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
   const [locked, setLocked] = useState(false)
-  const [busyId, setBusyId] = useState<number | null>(null)
+  const [busyId, setBusyId] = useState<string | number | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -47,12 +53,12 @@ export function Products() {
     void load()
   }, [load])
 
-  const remove = async (id: number) => {
+  const remove = async (productKey: string | number) => {
     if (!confirm('Delete this product? This cannot be undone.')) return
-    setBusyId(id)
+    setBusyId(productKey)
     setErr('')
     try {
-      await api.delete(`/school/products/${id}`)
+      await api.delete(`/school/products/${productKey}`)
       await load()
     } catch (e) {
       setErr(errMsg(e, 'Delete failed'))
@@ -109,12 +115,13 @@ export function Products() {
           ) : (
             <ul className="divide-y divide-[var(--border)]">
               {rows.map((p) => (
-                <li key={p.id} className="flex items-center gap-3 p-4">
+                <li key={p.product_code ?? p.id} className="flex items-center gap-3 p-4">
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-[var(--text)]">{p.name}</p>
                     <p className="truncate text-xs text-[var(--text-muted)]">
-                      {p.category?.name ?? 'Uncategorised'}
+                      {p.category?.name ?? 'Uncategorised'} · {p.sub_category?.name ?? 'No subcategory'}
                     </p>
+                    <p className="truncate text-xs text-[var(--text-muted)]">Vendor: {p.vendor?.shop_name ?? '—'} · Portal ₹{Number(p.portal_charge ?? 0).toFixed(2)} · Server ₹{Number(p.server_charge ?? 0).toFixed(2)} · Assigned ₹{Number(p.assignment_charge ?? 0).toFixed(2)}</p>
                   </div>
                   <span className="tnum shrink-0 text-sm font-bold text-[var(--text)]">
                     ₹{Number(p.price ?? 0).toFixed(2)}
@@ -122,15 +129,8 @@ export function Products() {
                   <span className={`badge shrink-0 ${(p.stock ?? 0) > 0 ? 'badge-ok' : 'badge-danger'}`}>
                     {p.stock ?? 0}
                   </span>
-                  <Button
-                    variant="ghost"
-                    aria-label={`Delete ${p.name}`}
-                    disabled={busyId === p.id}
-                    onClick={() => remove(p.id)}
-                    className="shrink-0 text-[var(--color-danger-600)] hover:bg-[var(--color-danger-50)]"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <Link to={`/products/${p.product_code ?? p.id}/edit`}><Button variant="ghost" aria-label={`Edit ${p.name}`}><Pencil className="h-4 w-4" /></Button></Link>
+                  <Button variant="ghost" aria-label={`Delete ${p.name}`} disabled={busyId === (p.product_code ?? p.id)} onClick={() => void remove(p.product_code ?? p.id ?? '')} className="shrink-0 text-[var(--color-danger-600)] hover:bg-[var(--color-danger-50)]"><Trash2 className="h-4 w-4" /></Button>
                 </li>
               ))}
             </ul>

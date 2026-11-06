@@ -72,6 +72,8 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
   const images = r.images as { url?: string; path?: string }[] | undefined
   const vals = r.values as { value?: unknown; field?: { name?: string } }[] | undefined
   const price = Number(r.price ?? 0)
+  const charges = Number(r.portal_charge ?? 0) + Number(r.server_charge ?? 0)
+  const customerPrice = Math.round((price + charges + Number.EPSILON) * 100) / 100
   const imageUrls = (images ?? []).map((im) => im.url ?? im.path ?? '').filter(Boolean)
   const rawVariants = Array.isArray(r.variants) ? r.variants as Record<string, unknown>[] : []
   const rawStockRows = Array.isArray(r.stock_rows) ? r.stock_rows as Record<string, unknown>[] : Array.isArray(r.product_stocks) ? r.product_stocks as Record<string, unknown>[] : []
@@ -92,7 +94,7 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
     color_code: (v.color_code ?? null) as string | null,
     size: v.size as string | null,
     stock: v.stock == null ? null : Number(v.stock ?? v.quantity ?? 0),
-    price: v.price == null ? null : Number(v.price ?? price),
+    price: v.price == null ? null : Math.round((Number(v.price) + charges + Number.EPSILON) * 100) / 100,
     sku: v.sku == null ? null : String(v.sku),
   }))
   const specs = vals && vals.length
@@ -107,7 +109,7 @@ export const toProduct = (r: Record<string, unknown>, i: number): Product => {
     name: String(r.name ?? 'Product'),
     category: cat?.name ?? 'Book',
     subCategory: sub?.name ?? null,
-    price, mrp: Number(r.mrp ?? price),
+    price: customerPrice, mrp: Number(r.mrp ?? price),
     rating: Number(r.rating ?? 4.5), reviews: Number(r.reviews_count ?? (50 + ((i * 37) % 300))), stock: Number(r.stock ?? 10), stock_rows: stockRows, is_variant: r.is_variant == null ? variantRows.length > 0 : Boolean(r.is_variant), image: imageUrls[0] ?? 'https://images.unsplash.com/photo-1449824900964-72a3873ebcb9?auto=format&fit=crop&w=800&q=80',
     images: imageUrls.length ? imageUrls : undefined,
     delivery: (r.delivery_mode as Product['delivery']) ?? 'school_pickup',

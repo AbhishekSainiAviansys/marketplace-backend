@@ -11,7 +11,7 @@ class CommonController extends Controller
 {
     private function storefrontRelations(bool $details = false): array
     {
-        $relations = ['category', 'subCategory', 'images', 'variants'];
+        $relations = ['category', 'subCategory:id,category_id,name,slug,description,icon,is_active', 'images', 'variants'];
         if ($details) {
             $relations[] = 'values';
             if (Schema::hasTable('category_fields')) {
@@ -25,12 +25,24 @@ class CommonController extends Controller
         return $relations;
     }
 
+    private function presentStorefrontProduct(Product $product): Product
+    {
+        $product->price = round(
+            (float) $product->price + (float) ($product->portal_charge ?? 0) + (float) ($product->server_charge ?? 0),
+            2,
+        );
+
+        return $product->makeHidden(['portal_charge', 'server_charge', 'assignment_charge']);
+    }
+
     public function categories()
     {
         return Category::where('is_active', 1)->with(['fields' => function ($q) {
             $q->orderBy('sort_order')->orderBy('id');
         }, 'subCategories' => function ($q) {
-            $q->where('is_active', 1)->orderBy('name');
+            $q->select('id', 'category_id', 'name', 'slug', 'description', 'icon', 'is_active')
+                ->where('is_active', 1)
+                ->orderBy('name');
         }])->get();
     }
 
@@ -61,7 +73,7 @@ class CommonController extends Controller
                     });
             }
 
-            return response()->json($q->get());
+            return response()->json($q->get()->map(fn (Product $product) => $this->presentStorefrontProduct($product)));
         }
         $q = Product::where('is_active', 1)->with($this->storefrontRelations());
         // Category filter accepts the slug OR the display name so the student
@@ -97,7 +109,10 @@ class CommonController extends Controller
             $q->orderByDesc('id');
         }
 
-        return $q->paginate($r->per_page ?? 20);
+        $products = $q->paginate($r->per_page ?? 20);
+        $products->getCollection()->transform(fn (Product $product) => $this->presentStorefrontProduct($product));
+
+        return $products;
     }
 
     public function productShow($id)
@@ -113,7 +128,7 @@ class CommonController extends Controller
             abort(404);
         }
 
-        return response()->json($product);
+        return response()->json($this->presentStorefrontProduct($product));
     }
 
     public function upload(Request $r)

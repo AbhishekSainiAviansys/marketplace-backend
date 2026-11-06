@@ -6,8 +6,19 @@ import { assetUrl } from '@lib/brand'
 import { useToast } from '@ui'
 
 type Cat = { id: number; name: string }
+type ChargeMode = 'fixed' | 'percentage'
+type SubCategoryConfig = Cat & {
+  portal_charge_type: ChargeMode
+  portal_charge_value: number | string
+  server_charge_type: ChargeMode
+  server_charge_value: number | string
+}
 type StockRow = { colour: string; color_code: string; size: string; quantity: number }
 const DEFAULT_STOCK_COLOR = '#64748b'
+const calculateCharge = (basePrice: number, mode: ChargeMode | undefined, value: number | string | undefined) => {
+  const amount = mode === 'percentage' ? basePrice * Number(value ?? 0) / 100 : Number(value ?? 0)
+  return Math.round((amount + Number.EPSILON) * 100) / 100
+}
 type CatField = {
   id: number
   field_name: string
@@ -27,22 +38,30 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
   const toast = useToast()
   const [cats, setCats] = useState<Cat[]>([])
   const [catId, setCatId] = useState('')
-  const [subCats, setSubCats] = useState<Cat[]>([])
+  const [subCats, setSubCats] = useState<SubCategoryConfig[]>([])
   const [subCatId, setSubCatId] = useState('')
   const [fields, setFields] = useState<CatField[]>([])
-  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', portal_charge: '', server_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '', is_variant: false })
+  const [form, setForm] = useState({ name: '', price: '', mrp: '', delivery_charge: '', stock: 0, delivery_mode: 'self', is_boost: false, boost_until: '', is_variant: false })
   const [vals, setVals] = useState<Record<string, string>>({})
   const [images, setImages] = useState<string[]>([])
   const [stocks, setStocks] = useState<StockRow[]>([{ colour: '', color_code: DEFAULT_STOCK_COLOR, size: '', quantity: 0 }])
   const mrpNum = Number(form.mrp || 0)
   const priceNum = Number(form.price || 0)
-  const discountAmount = mrpNum > priceNum && mrpNum > 0 ? mrpNum - priceNum : 0
+  const selectedSubCategory = subCats.find((subCategory) => String(subCategory.id) === subCatId)
+  const portalCharge = selectedSubCategory
+    ? calculateCharge(priceNum, selectedSubCategory.portal_charge_type, selectedSubCategory.portal_charge_value)
+    : 0
+  const serverCharge = selectedSubCategory
+    ? calculateCharge(priceNum, selectedSubCategory.server_charge_type, selectedSubCategory.server_charge_value)
+    : 0
+  const studentPrice = Math.round((priceNum + portalCharge + serverCharge + Number.EPSILON) * 100) / 100
+  const discountAmount = mrpNum > studentPrice && mrpNum > 0 ? mrpNum - studentPrice : 0
   const discountPercent = mrpNum > 0 ? Math.round((discountAmount / mrpNum) * 100) : 0
-  const estimatedDeliveryCharge = form.delivery_mode === 'school_pickup' ? 0 : form.delivery_mode === 'thirdparty' ? 99 : (priceNum >= 999 ? 0 : 49)
+  const estimatedDeliveryCharge = form.delivery_mode === 'school_pickup' ? 0 : form.delivery_mode === 'thirdparty' ? 99 : (studentPrice >= 999 ? 0 : 49)
   const deliveryChargeInput = form.delivery_charge === '' ? null : Number(form.delivery_charge)
   const deliveryCharge = deliveryChargeInput === null || Number.isNaN(deliveryChargeInput) ? estimatedDeliveryCharge : deliveryChargeInput
-  const gstAmount = Math.round((priceNum + deliveryCharge) * 0.18 * 100) / 100
-  const payableAmount = priceNum + deliveryCharge + gstAmount
+  const gstAmount = Math.round((studentPrice + deliveryCharge) * 0.18 * 100) / 100
+  const payableAmount = studentPrice + deliveryCharge + gstAmount
   const [uploading, setUploading] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -88,8 +107,6 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
           price: p.price ?? '',
           mrp: p.mrp ?? '',
           delivery_charge: p.delivery_charge ?? '',
-          portal_charge: p.portal_charge ?? '',
-          server_charge: p.server_charge ?? '',
           stock: p.stock ?? 0,
           delivery_mode: p.delivery_mode ?? 'self',
           is_boost: !!p.is_boost,
@@ -178,8 +195,6 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         is_boost: form.is_boost,
         boost_until: form.boost_until || null,
         delivery_charge: form.delivery_charge === '' ? null : Number(form.delivery_charge),
-        portal_charge: form.portal_charge === '' ? null : Number(form.portal_charge),
-        server_charge: form.server_charge === '' ? null : Number(form.server_charge),
       }
       if (isEdit && id) {
         await api.put(`/${prefix}/products/${id}`, payload)
@@ -210,7 +225,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         <button
           type="submit"
           form="product-form"
-          disabled={busy || catId === ''}
+          disabled={busy || catId === '' || subCatId === ''}
           className="accent-bg flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {busy ? (
@@ -235,19 +250,22 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
         </select>
       </label>
 
-      {subCats.length > 0 && (
+      {catId && (
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-700">Sub-category (optional)</span>
+          <span className="mb-1 block text-sm font-medium text-slate-700">Sub-category <span className="text-red-500">(required)*</span></span>
           <select
+            form="product-form"
+            required
             value={subCatId}
             onChange={(e) => setSubCatId(e.target.value)}
             className="field focus:field-focus outline-none"
           >
-            <option value="">-- none --</option>
+            <option value="">-- choose a sub-category --</option>
             {subCats.map((s) => (
               <option key={s.id} value={s.id}>{s.name}</option>
             ))}
           </select>
+          {subCats.length === 0 && <span className="mt-1 block text-xs text-red-600">No subcategories configured for this category.</span>}
         </label>
       )}
 
@@ -278,7 +296,7 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               />
             </label>
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium text-slate-700">Discounted price per piece</span>
+              <span className="mb-1.5 block text-sm font-medium text-slate-700">Discounted price per piece before internal charges</span>
               <input
                 required
                 type="number"
@@ -324,30 +342,6 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               value={form.delivery_charge}
               onChange={(e) => setForm({ ...form, delivery_charge: e.target.value })}
               placeholder="Leave blank to estimate"
-              className="field focus:field-focus outline-none"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Portal charge (optional, included in price, internal)</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.portal_charge}
-              onChange={(e) => setForm({ ...form, portal_charge: e.target.value })}
-              placeholder="Leave blank if none"
-              className="field focus:field-focus outline-none"
-            />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 block text-sm font-medium text-slate-700">Server charge (optional, included in price, internal)</span>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={form.server_charge}
-              onChange={(e) => setForm({ ...form, server_charge: e.target.value })}
-              placeholder="Leave blank if none"
               className="field focus:field-focus outline-none"
             />
           </label>
@@ -511,13 +505,16 @@ export function ProductForm({ prefix, id: idProp }: { prefix: string; id?: strin
               <p className="mb-3 text-sm font-semibold text-slate-800">Price breakdown</p>
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between"><span className="text-slate-500">MRP</span><span className="tnum font-medium">₹{mrpNum.toFixed(2)}</span></div>
-                <div className="flex justify-between"><span className="text-slate-500">Discounted price</span><span className="tnum font-medium">₹{priceNum.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Base discounted price</span><span className="tnum font-medium">₹{priceNum.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Portal charge (internal)</span><span className="tnum font-medium">₹{portalCharge.toFixed(2)}</span></div>
+                <div className="flex justify-between"><span className="text-slate-500">Server charge (internal)</span><span className="tnum font-medium">₹{serverCharge.toFixed(2)}</span></div>
+                <div className="flex justify-between border-t border-slate-200 pt-1.5"><span className="text-slate-500">Discounted price shown to students</span><span className="tnum font-medium">₹{studentPrice.toFixed(2)}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Discount</span><span className="tnum font-medium">₹{discountAmount.toFixed(2)} ({discountPercent}%)</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">Delivery charge</span><span className="tnum font-medium">{deliveryCharge === 0 ? 'FREE' : `₹${deliveryCharge.toFixed(2)}`}</span></div>
                 <div className="flex justify-between"><span className="text-slate-500">GST (18%)</span><span className="tnum font-medium">₹{gstAmount.toFixed(2)}</span></div>
                 <div className="flex justify-between border-t border-slate-200 pt-1.5 font-semibold"><span>Payable amount</span><span className="tnum">₹{payableAmount.toFixed(2)}</span></div>
               </div>
-              {mrpNum > 0 && priceNum > mrpNum && (
+              {mrpNum > 0 && studentPrice > mrpNum && (
                 <p className="mt-2 text-xs font-medium text-red-500">Discounted price cannot exceed MRP.</p>
               )}
             </div>

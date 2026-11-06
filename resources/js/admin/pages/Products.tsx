@@ -256,12 +256,12 @@ export function Products() {
                     {p.delivery_mode ? ` ${DELIVERY[p.delivery_mode] ?? p.delivery_mode}` : ''}
                   </p>
                   <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs sm:grid-cols-3 lg:grid-cols-4">
-                    <span><span className="text-[var(--text-subtle)]">MRP:</span> ?{Number(p.mrp ?? 0).toFixed(2)}</span>
-                    <span><span className="text-[var(--text-subtle)]">Price:</span> ?{Number(p.price ?? 0).toFixed(2)}</span>
+                    <span><span className="text-[var(--text-subtle)]">MRP:</span> {Number(p.mrp ?? 0).toFixed(2)}</span>
+                    <span><span className="text-[var(--text-subtle)]">Price:</span> {Number(p.price ?? 0).toFixed(2)}</span>
                     <span><span className="text-[var(--text-subtle)]">Stock:</span> {p.stock ?? 0}</span>
-                    <span><span className="text-[var(--text-subtle)]">Delivery:</span> {p.delivery_charge == null ? 'Estimated' : `?${Number(p.delivery_charge).toFixed(2)}`}</span>
-                    <span><span className="text-[var(--text-subtle)]">Portal:</span> {p.portal_charge == null ? '0' : `?${Number(p.portal_charge).toFixed(2)}`}</span>
-                    <span><span className="text-[var(--text-subtle)]">Server:</span> {p.server_charge == null ? '0' : `?${Number(p.server_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Delivery:</span> {p.delivery_charge == null ? 'Estimated' : `${Number(p.delivery_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Portal:</span> {p.portal_charge == null ? '0' : `${Number(p.portal_charge).toFixed(2)}`}</span>
+                    <span><span className="text-[var(--text-subtle)]">Server:</span> {p.server_charge == null ? '0' : `${Number(p.server_charge).toFixed(2)}`}</span>
                   </div>
                 </div>
 

@@ -16,6 +16,21 @@ type CategoryField = {
   sort_order: number
 }
 
+type ChargeType = 'fixed' | 'percentage'
+
+type SubCategory = {
+  id: number
+  category_id: number
+  name: string
+  slug: string
+  description: string | null
+  is_active: boolean
+  portal_charge_type: ChargeType
+  portal_charge_value: number | string
+  server_charge_type: ChargeType
+  server_charge_value: number | string
+}
+
 type Category = {
   id: number
   name: string
@@ -25,6 +40,7 @@ type Category = {
 
   is_active: boolean
   fields: CategoryField[]
+  sub_categories: SubCategory[]
 }
 
 const FIELD_TYPES = ['text', 'number', 'textarea', 'select', 'file', 'date', 'checkbox'] as const
@@ -44,6 +60,19 @@ export function Categories() {
   const [form, setForm] = useState({ name: '', slug: '', description: '', icon: '', is_active: true })
   const [editId, setEditId] = useState<number | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [subCategoriesCategoryId, setSubCategoriesCategoryId] = useState<number | null>(null)
+  const [editingSubCategoryId, setEditingSubCategoryId] = useState<number | null>(null)
+  const [subCategoryBusy, setSubCategoryBusy] = useState<number | null>(null)
+  const [subCategoryForm, setSubCategoryForm] = useState({
+    name: '',
+    slug: '',
+    description: '',
+    is_active: true,
+    portal_charge_type: 'fixed' as ChargeType,
+    portal_charge_value: '0',
+    server_charge_type: 'fixed' as ChargeType,
+    server_charge_value: '0',
+  })
 
   const [fieldsCategoryId, setFieldsCategoryId] = useState<number | null>(null)
   const [editingFieldId, setEditingFieldId] = useState<number | null>(null)
@@ -91,6 +120,88 @@ export function Categories() {
     setCatId(id)
     const c = rows.find((r) => r.id === id)
     setCat(c ?? null)
+  }
+
+  const resetSubCategoryForm = () => {
+    setEditingSubCategoryId(null)
+    setSubCategoryForm({
+      name: '',
+      slug: '',
+      description: '',
+      is_active: true,
+      portal_charge_type: 'fixed',
+      portal_charge_value: '0',
+      server_charge_type: 'fixed',
+      server_charge_value: '0',
+    })
+  }
+
+  const openSubCategories = (category: Category) => {
+    setSubCategoriesCategoryId(category.id)
+    resetSubCategoryForm()
+  }
+
+  const startEditSubCategory = (subCategory: SubCategory) => {
+    setEditingSubCategoryId(subCategory.id)
+    setSubCategoryForm({
+      name: subCategory.name,
+      slug: subCategory.slug,
+      description: subCategory.description ?? '',
+      is_active: subCategory.is_active,
+      portal_charge_type: subCategory.portal_charge_type ?? 'fixed',
+      portal_charge_value: String(subCategory.portal_charge_value ?? 0),
+      server_charge_type: subCategory.server_charge_type ?? 'fixed',
+      server_charge_value: String(subCategory.server_charge_value ?? 0),
+    })
+  }
+
+  const submitSubCategory = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!subCategoriesCategoryId) return
+    setMsg(null)
+    setSubCategoryBusy(editingSubCategoryId ?? -1)
+    const payload = {
+      category_id: subCategoriesCategoryId,
+      name: subCategoryForm.name.trim(),
+      slug: subCategoryForm.slug.trim(),
+      description: subCategoryForm.description.trim() || null,
+      is_active: subCategoryForm.is_active,
+      portal_charge_type: subCategoryForm.portal_charge_type,
+      portal_charge_value: Number(subCategoryForm.portal_charge_value) || 0,
+      server_charge_type: subCategoryForm.server_charge_type,
+      server_charge_value: Number(subCategoryForm.server_charge_value) || 0,
+    }
+    try {
+      if (editingSubCategoryId) {
+        await api.put('/admin/sub-categories/' + editingSubCategoryId, payload)
+        flash('ok', 'Subcategory updated')
+      } else {
+        await api.post('/admin/sub-categories', payload)
+        flash('ok', 'Subcategory created')
+      }
+      resetSubCategoryForm()
+      load()
+    } catch (e) {
+      setMsg({ kind: 'err', text: errMsg(e, 'Subcategory save failed') })
+    } finally {
+      setSubCategoryBusy(null)
+    }
+  }
+
+  const deleteSubCategory = async (id: number) => {
+    if (!window.confirm('Delete this subcategory? Products will keep their category but lose the subcategory.')) return
+    setMsg(null)
+    setSubCategoryBusy(id)
+    try {
+      await api.delete('/admin/sub-categories/' + id)
+      flash('ok', 'Subcategory deleted')
+      if (editingSubCategoryId === id) resetSubCategoryForm()
+      load()
+    } catch (e) {
+      setMsg({ kind: 'err', text: errMsg(e, 'Subcategory delete failed') })
+    } finally {
+      setSubCategoryBusy(null)
+    }
   }
 
   const filtered = rows.filter((r) => {
@@ -197,6 +308,7 @@ export function Categories() {
   }
 
   const selectedCategory = rows.find((r) => r.id === fieldsCategoryId) ?? null
+  const subCategoriesCategory = rows.find((r) => r.id === subCategoriesCategoryId) ?? null
 
   const resetFieldForm = () => {
     setEditingFieldId(null)
@@ -407,6 +519,13 @@ export function Categories() {
                           className="btn btn-secondary !px-3 !py-1.5 !text-xs"
                         >
                           Fields
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openSubCategories(c)}
+                          className="btn btn-secondary !px-3 !py-1.5 !text-xs"
+                        >
+                          Subcategories ({c.sub_categories?.length ?? 0})
                         </button>
                         <button
                           type="button"
@@ -754,6 +873,111 @@ export function Categories() {
                         </tr>
                       ))
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {subCategoriesCategoryId !== null && subCategoriesCategory && (
+        <Modal title={`Subcategories for ${subCategoriesCategory.name}`} wide onClose={() => { setSubCategoriesCategoryId(null); resetSubCategoryForm() }}>
+          <div className="mt-2 space-y-5">
+            <form onSubmit={submitSubCategory} className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  {editingSubCategoryId ? 'Edit subcategory' : 'Add subcategory'}
+                </h3>
+                {editingSubCategoryId && (
+                  <button type="button" onClick={resetSubCategoryForm} className="text-xs text-slate-500 hover:text-slate-700">
+                    Cancel edit
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-700">Name</span>
+                  <input required value={subCategoryForm.name} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, name: e.target.value })} className="field !py-2 !text-sm" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-slate-700">Slug</span>
+                  <input required value={subCategoryForm.slug} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, slug: e.target.value })} className="field !py-2 !text-sm" />
+                </label>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-700">Description</span>
+                <textarea value={subCategoryForm.description} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, description: e.target.value })} rows={2} className="field !py-2 !text-sm" />
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-semibold text-slate-700">Portal charge</legend>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                    <select aria-label="Portal charge type" value={subCategoryForm.portal_charge_type} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, portal_charge_type: e.target.value as ChargeType })} className="field !py-2 !text-sm">
+                      <option value="fixed">Fixed amount</option>
+                      <option value="percentage">Percentage</option>
+                    </select>
+                    <input aria-label="Portal charge value" required type="number" min="0" step="0.01" value={subCategoryForm.portal_charge_value} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, portal_charge_value: e.target.value })} className="field !py-2 !text-sm" />
+                  </div>
+                </fieldset>
+                <fieldset className="space-y-2">
+                  <legend className="text-xs font-semibold text-slate-700">Server charge</legend>
+                  <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                    <select aria-label="Server charge type" value={subCategoryForm.server_charge_type} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, server_charge_type: e.target.value as ChargeType })} className="field !py-2 !text-sm">
+                      <option value="fixed">Fixed amount</option>
+                      <option value="percentage">Percentage</option>
+                    </select>
+                    <input aria-label="Server charge value" required type="number" min="0" step="0.01" value={subCategoryForm.server_charge_value} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, server_charge_value: e.target.value })} className="field !py-2 !text-sm" />
+                  </div>
+                </fieldset>
+              </div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={subCategoryForm.is_active} onChange={(e) => setSubCategoryForm({ ...subCategoryForm, is_active: e.target.checked })} className="rounded border-slate-300 text-accent" />
+                <span className="text-sm text-slate-700">Active</span>
+              </label>
+              <div className="flex justify-end gap-2">
+                <button type="submit" disabled={subCategoryBusy !== null} className="accent-bg !py-2 !px-4 !text-sm text-white">
+                  {editingSubCategoryId ? 'Save changes' : 'Add subcategory'}
+                </button>
+              </div>
+            </form>
+
+            <div className="card overflow-hidden p-0">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left">
+                  <thead>
+                    <tr className="bg-slate-50">
+                      <th className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Name</th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Portal charge</th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Server charge</th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Status</th>
+                      <th className="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-500 uppercase">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(subCategoriesCategory.sub_categories ?? []).length === 0 ? (
+                      <tr><td colSpan={5} className="px-3 py-6 text-center text-sm text-slate-500">No subcategories yet.</td></tr>
+                    ) : (subCategoriesCategory.sub_categories ?? []).map((subCategory) => (
+                      <tr key={subCategory.id} className="transition hover:bg-slate-50/60">
+                        <td className="border-b border-slate-100 px-3 py-2">
+                          <span className="block text-sm font-medium text-slate-900">{subCategory.name}</span>
+                          <span className="text-xs text-slate-500">{subCategory.slug}</span>
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">
+                          {subCategory.portal_charge_type === 'percentage' ? `${Number(subCategory.portal_charge_value).toFixed(2)}%` : `₹${Number(subCategory.portal_charge_value).toFixed(2)}`}
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">
+                          {subCategory.server_charge_type === 'percentage' ? `${Number(subCategory.server_charge_value).toFixed(2)}%` : `₹${Number(subCategory.server_charge_value).toFixed(2)}`}
+                        </td>
+                        <td className="border-b border-slate-100 px-3 py-2 text-sm text-slate-700">{subCategory.is_active ? 'Active' : 'Inactive'}</td>
+                        <td className="border-b border-slate-100 px-3 py-2">
+                          <div className="flex gap-1.5">
+                            <button type="button" onClick={() => startEditSubCategory(subCategory)} disabled={subCategoryBusy === subCategory.id} className="btn btn-secondary !px-2.5 !py-1 !text-xs">Edit</button>
+                            <button type="button" onClick={() => deleteSubCategory(subCategory.id)} disabled={subCategoryBusy === subCategory.id} className="btn !px-2.5 !py-1 !text-xs !bg-red-600 !text-white hover:!bg-red-700 disabled:opacity-60">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
