@@ -62,4 +62,5 @@ class CouponController extends Controller
         Coupon::findOrFail($id)->delete();
         return response()->json(['deleted' => true]);
     }
+    
 }

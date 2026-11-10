@@ -126,13 +126,11 @@ export function Cart() {
           <div className="h-2 overflow-hidden rounded-full bg-[var(--surface-3)]">
             <div className="accent-bg h-full rounded-full transition-all" style={{ width: `${pct}%` }} />
           </div>
-          {/* <p className="mt-1.5 text-xs text-[var(--text-muted)]">
-            {subTotal >= FREE ? 'You unlocked FREE home delivery!' : `Add ${rupee(FREE - subTotal)} more for free home delivery (pickup is always free)`}
-          </p> */}
+        
         </div>
         <dl className="mt-4 space-y-1.5 text-sm">
           <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Subtotal</dt><dd className="tnum font-semibold text-[var(--text)]">{rupee(subTotal)}</dd></div>
-          <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery (home delivery)</dt><dd className="tnum font-semibold text-[var(--text)]">{rupee(shipping)}</dd></div>
+          <div className="flex justify-between"><dt className="text-[var(--text-muted)]">Delivery Charges</dt><dd className="tnum font-semibold text-[var(--text)]">{rupee(shipping)}</dd></div>
           <div className="flex justify-between"><dt className="text-[var(--text-muted)]">GST (18%)</dt><dd className="tnum font-semibold text-[var(--text)]">{rupee(gst)}</dd></div>
           <div className="flex justify-between"><dt className="text-[var(--text-muted)]">MRP total</dt><dd className="tnum text-[var(--text-subtle)] line-through">{rupee(mrpTotal)}</dd></div>
           <div className="flex justify-between text-emerald-600"><dt>You save</dt><dd className="tnum font-bold">{rupee(save)}</dd></div>

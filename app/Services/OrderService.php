@@ -52,12 +52,29 @@ class OrderService
         $notifyAdmin = false;
         $adminProductNames = [];
 
-        $order = DB::transaction(function () use ($u, $data, $payment, &$notifyAdmin, &$adminProductNames) {
-            // Normalize item identifiers to product_code and drop internal ids.
+        $order = DB::transaction(function () use (
+            $u,
+            $data,
+            $payment,
+            &$notifyAdmin,
+            &$adminProductNames
+        ) {
+            /*
+            |--------------------------------------------------------------------------
+            | 1. Normalize product items
+            |--------------------------------------------------------------------------
+            */
+
             $normalized = [];
+
             foreach ($data['items'] as $it) {
-                $key = $it['product_code'] ?? $it['product_id'] ?? $it['id'] ?? null;
+                $key = $it['product_code']
+                    ?? $it['product_id']
+                    ?? $it['id']
+                    ?? null;
+
                 $product = $this->findProduct($key);
+
                 if ($product) {
                     $it['product_code'] = $product->product_code;
                     $it['name'] = $product->name;
@@ -65,28 +82,60 @@ class OrderService
                 } elseif ($key !== null && empty($it['product_code'])) {
                     $it['product_code'] = (string) $key;
                 }
+
                 unset($it['id'], $it['product_id']);
+
                 $normalized[] = $it;
             }
+
             $data['items'] = $normalized;
+
+            /*
+            |--------------------------------------------------------------------------
+            | 2. Validate products and reserve/decrement stock
+            |--------------------------------------------------------------------------
+            */
 
             foreach ($data['items'] as $it) {
                 if (empty($it['product_code'])) {
-                    continue;
+                    abort(422, 'Invalid product in your cart.');
                 }
+
                 $product = $this->findProduct($it['product_code'], true);
-                if (! $product || ! $product->is_active) {
+
+                if (!$product || !$product->is_active) {
                     abort(422, 'A product in your cart is no longer available.');
                 }
+
                 $qty = (int) ($it['qty'] ?? 1);
-                $inventory = app(ProductStockService::class);
-                $color = isset($it['color']) ? (string) $it['color'] : null;
-                $size = isset($it['size']) ? (string) $it['size'] : null;
-                $hasVariants = $inventory->hasVariants($product);
-                if ($hasVariants && ($color === null || $size === null)) {
-                    abort(422, 'Choose a colour and size for '.$product->name.'.');
+
+                if ($qty < 1 || $qty > 9) {
+                    abort(422, 'Invalid product quantity.');
                 }
-                $stockRecord = $inventory->findStockRecord($product, $color, $size, true);
+
+                $inventory = app(ProductStockService::class);
+
+                $color = isset($it['color'])
+                    ? (string) $it['color']
+                    : null;
+
+                $size = isset($it['size'])
+                    ? (string) $it['size']
+                    : null;
+
+                $hasVariants = $inventory->hasVariants($product);
+
+                if ($hasVariants && ($color === null || $size === null)) {
+                    abort(422, 'Choose a colour and size for ' . $product->name . '.');
+                }
+
+                $stockRecord = $inventory->findStockRecord(
+                    $product,
+                    $color,
+                    $size,
+                    true
+                );
+
                 $inventory->decrementForOrder(
                     $product,
                     $stockRecord,
@@ -94,127 +143,272 @@ class OrderService
                     $color,
                     $size,
                     $hasVariants,
-                    (string) ($payment['stock_reason'] ?? 'ordered'),
+                    (string) ($payment['stock_reason'] ?? 'ordered')
                 );
 
-                if ($product->created_by_type === 'admin' || $product->added_by_role === 'admin') {
+                if (
+                    $product->created_by_type === 'admin' ||
+                    $product->added_by_role === 'admin'
+                ) {
                     $notifyAdmin = true;
                     $adminProductNames[] = $product->name;
                 }
             }
 
-            $code = 'ORD'.now()->format('ymd').str_pad((string) random_int(0, 9999), 4, '0', STR_PAD_LEFT);
+            /*
+            |--------------------------------------------------------------------------
+            | 3. Generate order code
+            |--------------------------------------------------------------------------
+            */
+
+            $code = 'ORD' .
+                now()->format('ymd') .
+                str_pad(
+                    (string) random_int(0, 9999),
+                    4,
+                    '0',
+                    STR_PAD_LEFT
+                );
+
+            /*
+            |--------------------------------------------------------------------------
+            | 4. Calculate subtotal using database product prices
+            |--------------------------------------------------------------------------
+            */
 
             $subtotal = 0.0;
+
             foreach ($data['items'] as $it) {
                 $qty = max(1, (int) ($it['qty'] ?? 1));
+
                 $price = (float) ($it['price'] ?? 0);
-                if (empty($it['price']) && ! empty($it['product_code'])) {
+
+                if (empty($it['price']) && !empty($it['product_code'])) {
                     $product = $this->findProduct($it['product_code']);
+
                     if ($product) {
                         $price = $this->customerUnitPrice($product);
                     }
                 }
+
                 $subtotal += $qty * $price;
             }
 
+            $subtotal = round($subtotal, 2);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 5. Calculate delivery charge
+            |--------------------------------------------------------------------------
+            */
+
             $deliveryText = (string) ($data['delivery'] ?? '');
+
             $isPickup = stripos($deliveryText, 'pickup') !== false;
+
             $delivery = 0.0;
-            if ($isPickup) {
-                $productDelivery = 0.0;
-                $hasExplicit = false;
-                foreach ($data['items'] as $it) {
-                    if (! empty($it['product_code'])) {
-                        $product = $this->findProduct($it['product_code']);
-                        if ($product && $product->delivery_charge !== null) {
-                            $hasExplicit = true;
-                            $productDelivery += (float) $product->delivery_charge * max(1, (int) ($it['qty'] ?? 1));
-                        }
-                    }
+            $productDelivery = 0.0;
+            $hasExplicitDelivery = false;
+
+            foreach ($data['items'] as $it) {
+                if (empty($it['product_code'])) {
+                    continue;
                 }
-                if ($hasExplicit) {
-                    $delivery = $productDelivery;
-                } else {
-                    $delivery = 0.0;
-                }
-            } else {
-                $productDelivery = 0.0;
-                $hasExplicit = false;
-                foreach ($data['items'] as $it) {
-                    if (! empty($it['product_code'])) {
-                        $product = $this->findProduct($it['product_code']);
-                        if ($product && $product->delivery_charge !== null) {
-                            $hasExplicit = true;
-                            $productDelivery += (float) $product->delivery_charge * max(1, (int) ($it['qty'] ?? 1));
-                        }
-                    }
-                }
-                if ($hasExplicit) {
-                    $delivery = $productDelivery;
-                } else {
-                    $delivery = $subtotal >= 999 ? 0.0 : 49.0;
+
+                $product = $this->findProduct($it['product_code']);
+
+                if ($product && $product->delivery_charge !== null) {
+                    $hasExplicitDelivery = true;
+
+                    $productDelivery +=
+                        (float) $product->delivery_charge *
+                        max(1, (int) ($it['qty'] ?? 1));
                 }
             }
 
-            $gstRate = 18.0;
-            $gst = round(($subtotal + $delivery) * ($gstRate / 100), 2);
+            if ($hasExplicitDelivery) {
+                $delivery = $productDelivery;
+            } elseif (!$isPickup) {
+                $delivery = $subtotal >= 999 ? 0.0 : 49.0;
+            }
 
-            $couponCode = ! empty($data['coupon_code']) ? strtoupper(trim((string) $data['coupon_code'])) : null;
+            $delivery = round($delivery, 2);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 6. Calculate GST
+            |--------------------------------------------------------------------------
+            */
+
+            $gstRate = 18.0;
+
+            $gst = round(
+                ($subtotal + $delivery) * ($gstRate / 100),
+                2
+            );
+
+            /*
+            |--------------------------------------------------------------------------
+            | 7. Validate coupon and calculate discount
+            |--------------------------------------------------------------------------
+            */
+
+            $couponCode = !empty($data['coupon_code'])
+                ? strtoupper(trim((string) $data['coupon_code']))
+                : null;
+
             $coupon = null;
             $couponDiscount = 0.0;
+
             if ($couponCode) {
-                $res = (new CouponService)->validateCode($couponCode, $u, $subtotal);
+                $res = (new CouponService)->validateCode(
+                    $couponCode,
+                    $u,
+                    $subtotal
+                );
+
                 $coupon = $res['coupon'];
                 $couponDiscount = (float) $res['discount_amount'];
             }
 
-            $grandTotal = round($subtotal + $delivery + $gst - $couponDiscount, 2);
-            if ($grandTotal < 0) {
-                $grandTotal = 0;
+            $couponDiscount = round($couponDiscount, 2);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 8. Calculate final payable amount
+            |--------------------------------------------------------------------------
+            */
+
+            $grandTotal = round(
+                $subtotal + $delivery + $gst - $couponDiscount,
+                2
+            );
+
+            $grandTotal = max(0, $grandTotal);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 9. Verify frontend payable amount
+            |--------------------------------------------------------------------------
+            |
+            | Never use the frontend amount to calculate the order.
+            | Only compare it with our database-calculated amount.
+            |
+            */
+
+            if (array_key_exists('total_payable', $data)) {
+                $clientPayable = round(
+                    (float) $data['total_payable'],
+                    2
+                );
+
+                if (abs($grandTotal - $clientPayable) > 0.01) {
+                    abort(
+                        422,
+                        'Order amount has changed. Please refresh your cart and try again.'
+                    );
+                }
             }
+
+            /*
+            |--------------------------------------------------------------------------
+            | 10. Create order payload
+            |--------------------------------------------------------------------------
+            */
 
             $payload = array_merge([
                 'user_id' => $u->id,
                 'order_code' => $code,
                 'items' => $data['items'],
+
+                // Final amount payable by customer.
                 'total' => $grandTotal,
+
                 'pay_mode' => $data['pay_mode'] ?? 'Online',
                 'delivery' => $data['delivery'] ?? null,
                 'address' => $data['address'] ?? null,
+
                 'status' => $data['status'] ?? 'Placed',
-                'placed_at' => ($payment['payment_status'] ?? null) === 'pending' ? null : now(),
+
+                'placed_at' =>
+                    ($payment['payment_status'] ?? null) === 'pending'
+                        ? null
+                        : now(),
+
                 'payment_status' => $payment['payment_status'] ?? 'paid',
-                'paid_at' => ($payment['payment_status'] ?? 'paid') === 'paid' ? now() : null,
-            ], array_intersect_key($payment, array_flip([
-                'status', 'payment_status', 'payment_provider', 'provider_order_id', 'payment_ref', 'paid_at', 'stock_reserved_until',
-            ])));
+
+                'paid_at' =>
+                    ($payment['payment_status'] ?? 'paid') === 'paid'
+                        ? now()
+                        : null,
+
+            ], array_intersect_key(
+                $payment,
+                array_flip([
+                    'status',
+                    'payment_status',
+                    'payment_provider',
+                    'provider_order_id',
+                    'payment_ref',
+                    'paid_at',
+                    'stock_reserved_until',
+                ])
+            ));
+
+            /*
+            |--------------------------------------------------------------------------
+            | 11. Save price breakdown if columns exist
+            |--------------------------------------------------------------------------
+            */
+
             if (Schema::hasColumn('orders', 'subtotal')) {
                 $payload['subtotal'] = $subtotal;
             }
+
             if (Schema::hasColumn('orders', 'delivery_charge')) {
                 $payload['delivery_charge'] = $delivery;
             }
+
             if (Schema::hasColumn('orders', 'gst_rate')) {
                 $payload['gst_rate'] = $gstRate;
             }
+
             if (Schema::hasColumn('orders', 'gst_amount')) {
                 $payload['gst_amount'] = $gst;
             }
-            if ($couponCode && Schema::hasColumn('orders', 'coupon_code')) {
+
+            if (
+                $couponCode &&
+                Schema::hasColumn('orders', 'coupon_code')
+            ) {
                 $payload['coupon_code'] = $couponCode;
             }
+
             if (Schema::hasColumn('orders', 'coupon_discount')) {
                 $payload['coupon_discount'] = $couponDiscount;
             }
+
             if ($coupon && Schema::hasColumn('orders', 'coupon_id')) {
                 $payload['coupon_id'] = $coupon->id;
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | 12. Create order
+            |--------------------------------------------------------------------------
+            */
+
             $order = Order::create($payload);
+
+            /*
+            |--------------------------------------------------------------------------
+            | 13. Save coupon usage
+            |--------------------------------------------------------------------------
+            */
 
             if ($coupon) {
                 $coupon->increment('used_count');
+
                 CouponUsage::create([
                     'coupon_id' => $coupon->id,
                     'user_id' => $u->id,
@@ -223,8 +417,15 @@ class OrderService
                 ]);
             }
 
+            /*
+            |--------------------------------------------------------------------------
+            | 14. Clear cart if requested
+            |--------------------------------------------------------------------------
+            */
+
             if ($payment['clear_cart'] ?? true) {
                 $cart = Cart::where('user_id', $u->id)->first();
+
                 if ($cart) {
                     $cart->items()->delete();
                 }
@@ -233,7 +434,16 @@ class OrderService
             return $order;
         });
 
-        if ($notifyAdmin && (($payment['payment_status'] ?? 'unpaid') === 'paid')) {
+        /*
+        |--------------------------------------------------------------------------
+        | 15. Notify admin
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+            $notifyAdmin &&
+            (($payment['payment_status'] ?? 'unpaid') === 'paid')
+        ) {
             $this->notifyAdminAboutOrder($order, $adminProductNames);
         }
 

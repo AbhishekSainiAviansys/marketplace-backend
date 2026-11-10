@@ -34,5 +34,9 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    'razorpay' => [
+        'ssl_verify' => env('RAZORPAY_SSL_VERIFY', true),
+        'ca_bundle' => env('RAZORPAY_CA_BUNDLE', null),
+    ],
 
 ];

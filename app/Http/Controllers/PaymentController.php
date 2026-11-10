@@ -7,153 +7,398 @@ use App\Models\Order;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class PaymentController extends Controller
 {
-    protected function razorpayCredentials(): array
-    {
-        if (Schema::hasTable('credentials')) {
-            $row = Credential::query()
-                ->active()
-                ->razorpay()
-                ->first();
-            if ($row && ! empty($row->public) && ! empty($row->private)) {
-                return ['key_id' => $row->public, 'key_secret' => $row->private];
-            }
-        }
+    protected OrderService $orders;
 
-        return ['key_id' => null, 'key_secret' => null];
+    public function __construct(OrderService $orders)
+    {
+        $this->orders = $orders;
     }
 
-    public function createOrder(Request $r, OrderService $orders)
+    /**
+     * Get active Razorpay credentials from database.
+     */
+    protected function razorpayCredentials(): array
     {
-        $d = $r->validate([
-            'items' => 'required|array|min:1',
-            'items.*.product_code' => 'required|string|max:32|exists:products,product_code',
-            'items.*.qty' => 'required|integer|min:1|max:9',
-            'items.*.color' => 'nullable|string|max:60',
-            'items.*.size' => 'nullable|string|max:60',
-            'delivery' => 'required|string|max:100',
-            'address' => 'nullable|string|max:2000',
-            'coupon_code' => 'nullable|string|max:64',
-        ]);
+        $credential = Credential::query()
+            ->active()
+            ->razorpay()
+            ->first();
 
-        $creds = $this->razorpayCredentials();
-        if (empty($creds['key_id']) || empty($creds['key_secret'])) {
-            abort(503, 'Razorpay is not configured.');
+        if (!$credential || empty($credential->public) || empty($credential->private)) {
+            throw new \RuntimeException('Razorpay credentials are not configured.');
         }
 
-        $order = $orders->create($r->user(), $d, [
-            'status' => 'Pending Payment',
-            'payment_status' => 'pending',
-            'payment_provider' => 'razorpay',
-            'stock_reason' => 'payment_reserved',
-            'stock_reserved_until' => now()->addMinutes(15),
-            'clear_cart' => false,
+        return [
+            'key_id' => $credential->public,
+            'key_secret' => $credential->private,
+        ];
+    }
+
+    /**
+     * Create Razorpay HTTP client with environment-specific SSL verification.
+     *
+     * Windows/XAMPP: Uses project CA bundle.
+     * Linux hosting: Uses system CA certificates.
+     */
+    protected function razorpayHttp(array $creds)
+    {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $caBundle = base_path('storage/app/certificates/cacert.pem');
+
+            if (!file_exists($caBundle) || !is_readable($caBundle)) {
+                throw new \RuntimeException(
+                    'Razorpay CA certificate not found or not readable: ' . $caBundle
+                );
+            }
+
+            $verify = $caBundle;
+        } else {
+            // Linux production server: use system CA certificates.
+            $verify = true;
+        }
+
+        return Http::connectTimeout(10)
+            ->timeout(30)
+            ->withBasicAuth($creds['key_id'], $creds['key_secret'])
+            ->withOptions([
+                'verify' => $verify,
+            ]);
+    }
+
+    /**
+     * Create Razorpay order.
+     */
+    public function createOrder(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        $validated = $request->validate([
+            'items' => ['required', 'array', 'min:1'],
+            'items.*.product_code' => ['required', 'string'],
+            'items.*.qty' => ['required', 'integer', 'min:1', 'max:9'],
+            'items.*.color' => ['nullable', 'string'],
+            'items.*.size' => ['nullable', 'string'],
+            'subtotal' => ['required', 'numeric', 'min:0'],
+            'mrp_total' => ['nullable', 'numeric', 'min:0'],
+            'coupon_discount' => ['nullable', 'numeric', 'min:0'],
+            'total_payable' => ['required', 'numeric', 'min:0.01'],
+            'delivery' => ['required'],
+            'address' => ['required'],
+            'coupon_code' => ['nullable', 'string'],
+            'pay_mode' => ['nullable', 'string'],
+            'subtotal' => 'required|numeric|min:0',
+            'total_payable' => 'required|numeric|min:0',
         ]);
-        $amountPaise = (int) round(((float) $order->total) * 100);
-        if ($amountPaise < 100) {
-            $orders->releasePaymentReservation($order);
-            abort(422, 'The order total is below the minimum Razorpay amount.');
+
+        $order = null;
+
+        try {
+
+            print_R($validated);die;
+            /*
+             * Create the order and reserve stock.
+             * The OrderService should retain your existing cart,
+             * product, address, coupon and stock validation logic.
+             */
+            $order = $this->orders->create($user, $validated);
+
+            $amount = (int) round(((float) $order->total_amount) * 100);
+
+            if ($amount < 100) {
+                $this->orders->releasePaymentReservation($order);
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Order amount must be at least ₹1.',
+                ], 422);
+            }
+
+            $creds = $this->razorpayCredentials();
+
+            $payload = [
+                'amount' => $amount,
+                'currency' => 'INR',
+                'receipt' => (string) $order->order_code,
+                'notes' => [
+                    'order_code' => (string) $order->order_code,
+                    'user_id' => (string) $user->id,
+                ],
+            ];
+
+            /*
+             * Make the Razorpay API request separately from response
+             * validation so stock reservation is released only once.
+             */
+            try {
+                $response = $this->razorpayHttp($creds)
+                    ->post('https://api.razorpay.com/v1/orders', $payload);
+            } catch (Throwable $e) {
+                $this->orders->releasePaymentReservation($order);
+
+                Log::error('Razorpay order API connection failed', [
+                    'order_code' => $order->order_code,
+                    'error' => $e->getMessage(),
+                ]);
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unable to connect to the payment gateway. Please try again.',
+                ], 502);
+            }
+
+            $razorpayOrder = $response->json();
+
+            if (
+                !$response->successful() ||
+                empty($razorpayOrder['id'])
+            ) {
+                $this->orders->releasePaymentReservation($order);
+
+                Log::error('Razorpay order creation failed', [
+                    'order_code' => $order->order_code,
+                    'http_status' => $response->status(),
+                    'response' => $razorpayOrder,
+                ]);
+
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unable to create payment order. Please try again.',
+                ], 502);
+            }
+
+            $order->provider_order_id = $razorpayOrder['id'];
+            $order->save();
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment order created successfully.',
+                'key_id' => $creds['key_id'],
+                'razorpay_order_id' => $razorpayOrder['id'],
+                'amount' => $amount,
+                'currency' => 'INR',
+                'order_code' => $order->order_code,
+            ]);
+
+        } catch (ValidationException $e) {
+            throw $e;
+
+        } catch (Throwable $e) {
+            if ($order) {
+                try {
+                    $this->orders->releasePaymentReservation($order);
+                } catch (Throwable $releaseError) {
+                    Log::error('Failed to release order reservation', [
+                        'order_code' => $order->order_code ?? null,
+                        'error' => $releaseError->getMessage(),
+                    ]);
+                }
+            }
+
+            Log::error('Razorpay createOrder error', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Unable to initialize payment. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify Razorpay payment signature and payment status.
+     */
+    public function verify(Request $request)
+    {
+        $validated = $request->validate([
+            'razorpay_order_id' => ['required', 'string'],
+            'razorpay_payment_id' => ['required', 'string'],
+            'razorpay_signature' => ['required', 'string'],
+        ]);
+
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        $order = Order::query()
+            ->where('user_id', $user->id)
+            ->where('provider_order_id', $validated['razorpay_order_id'])
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order not found.',
+            ], 404);
         }
 
         try {
-            $res = Http::connectTimeout(3)
-                ->timeout(10)
-                ->withBasicAuth($creds['key_id'], $creds['key_secret'])
-                ->post('https://api.razorpay.com/v1/orders', [
-                    'amount' => $amountPaise,
-                    'currency' => 'INR',
-                    'receipt' => $order->order_code,
-                    'payment_capture' => 1,
-                ]);
-        } catch (\Throwable $e) {
-            $orders->releasePaymentReservation($order);
-            throw $e;
-        }
+            $creds = $this->razorpayCredentials();
 
-        $razorpayOrder = $res->json();
-        if (! $res->successful()
-            || empty($razorpayOrder['id'])
-            || (int) ($razorpayOrder['amount'] ?? 0) !== $amountPaise
-            || strtoupper((string) ($razorpayOrder['currency'] ?? '')) !== 'INR') {
-            $orders->releasePaymentReservation($order);
-            abort(502, 'Unable to create Razorpay order.');
-        }
+            $generatedSignature = hash_hmac(
+                'sha256',
+                $validated['razorpay_order_id'] . '|' . $validated['razorpay_payment_id'],
+                $creds['key_secret']
+            );
 
-        $order->update(['provider_order_id' => $razorpayOrder['id']]);
-
-        return response()->json([
-            'key_id' => $creds['key_id'],
-            'razorpay_order_id' => $razorpayOrder['id'],
-            'amount' => $amountPaise,
-            'currency' => 'INR',
-            'order_code' => $order->order_code,
-        ], 201);
-    }
-
-    public function verify(Request $r, OrderService $orders)
-    {
-        $d = $r->validate([
-            'razorpay_order_id' => 'required|string|max:64',
-            'razorpay_payment_id' => 'required|string|max:64',
-            'razorpay_signature' => 'required|string|max:256',
-        ]);
-
-        $u = $r->user();
-        $order = Order::where('user_id', $u->id)
-            ->where('provider_order_id', $d['razorpay_order_id'])
-            ->firstOrFail();
-
-        if ($order->payment_status === 'paid') {
-            if ($order->payment_ref !== $d['razorpay_payment_id']) {
-                abort(409, 'This payment order was already confirmed with a different payment.');
+            if (!hash_equals($generatedSignature, $validated['razorpay_signature'])) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid payment signature.',
+                ], 422);
             }
 
-            return response()->json($order, 200);
-        }
-        if ($order->payment_status !== 'pending' || $order->stock_released_at !== null) {
-            abort(422, 'This payment attempt is no longer active.');
-        }
+            // Fetch payment details directly from Razorpay.
+            $response = $this->razorpayHttp($creds)
+                ->get(
+                    'https://api.razorpay.com/v1/payments/' .
+                    $validated['razorpay_payment_id']
+                );
 
-        $creds = $this->razorpayCredentials();
-        if (empty($creds['key_secret'])) {
-            abort(503, 'Razorpay is not configured.');
-        }
+            if (!$response->successful()) {
+                Log::error('Razorpay payment fetch failed', [
+                    'order_code' => $order->order_code,
+                    'http_status' => $response->status(),
+                    'response' => $response->json(),
+                ]);
 
-        $expected = hash_hmac('sha256', $d['razorpay_order_id'].'|'.$d['razorpay_payment_id'], $creds['key_secret']);
-        if (! hash_equals($expected, $d['razorpay_signature'])) {
-            abort(422, 'Invalid payment signature.');
-        }
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Unable to verify payment with Razorpay.',
+                ], 502);
+            }
 
-        $paymentResponse = Http::connectTimeout(3)
-            ->timeout(10)
-            ->withBasicAuth($creds['key_id'], $creds['key_secret'])
-            ->get('https://api.razorpay.com/v1/payments/'.rawurlencode($d['razorpay_payment_id']));
-        if (! $paymentResponse->successful()) {
-            abort(502, 'Unable to confirm Razorpay payment status.');
-        }
-        $payment = $paymentResponse->json();
-        if (($payment['status'] ?? null) !== 'captured'
-            || ($payment['order_id'] ?? null) !== $d['razorpay_order_id']
-            || (int) ($payment['amount'] ?? 0) !== (int) round(((float) $order->total) * 100)
-            || strtoupper((string) ($payment['currency'] ?? '')) !== 'INR') {
-            abort(422, 'Razorpay payment is not captured for the expected amount.');
-        }
+            $payment = $response->json();
 
-        $order = $orders->confirmPayment($order, $d['razorpay_payment_id']);
+            // Confirm payment is captured.
+            if (($payment['status'] ?? null) !== 'captured') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment has not been captured.',
+                ], 422);
+            }
 
-        return response()->json($order, 201);
+            // Verify payment belongs to the expected Razorpay order.
+            if (
+                ($payment['order_id'] ?? null) !==
+                $validated['razorpay_order_id']
+            ) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment order ID mismatch.',
+                ], 422);
+            }
+
+            // Verify amount.
+            $expectedAmount = (int) round(
+                ((float) $order->total_amount) * 100
+            );
+
+            if ((int) ($payment['amount'] ?? 0) !== $expectedAmount) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment amount mismatch.',
+                ], 422);
+            }
+
+            // Verify currency.
+            if (($payment['currency'] ?? null) !== 'INR') {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Payment currency mismatch.',
+                ], 422);
+            }
+
+            // Confirm payment and finalize order.
+            $this->orders->confirmPayment($order, $payment);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment verified successfully.',
+                'order_code' => $order->order_code,
+                'payment_id' => $validated['razorpay_payment_id'],
+            ]);
+
+        } catch (Throwable $e) {
+            Log::error('Razorpay payment verification error', [
+                'order_code' => $order->order_code,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Unable to verify payment. Please contact support if money was deducted.',
+            ], 500);
+        }
     }
 
-    public function cancel(Request $r, OrderService $orders)
+    /**
+     * Cancel payment and release the stock reservation.
+     */
+    public function cancel(Request $request)
     {
-        $d = $r->validate(['razorpay_order_id' => 'required|string|max:64']);
-        $order = Order::where('user_id', $r->user()->id)
-            ->where('provider_order_id', $d['razorpay_order_id'])
-            ->firstOrFail();
+        $validated = $request->validate([
+            'razorpay_order_id' => ['required', 'string'],
+        ]);
 
-        return response()->json($orders->releasePaymentReservation($order));
+        $user = $request->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Unauthenticated.',
+            ], 401);
+        }
+
+        $order = Order::query()
+            ->where('user_id', $user->id)
+            ->where('provider_order_id', $validated['razorpay_order_id'])
+            ->first();
+
+        if (!$order) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Order not found.',
+            ], 404);
+        }
+
+        try {
+            $this->orders->releasePaymentReservation($order);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Payment cancelled successfully.',
+            ]);
+
+        } catch (Throwable $e) {
+            Log::error('Razorpay payment cancellation error', [
+                'order_code' => $order->order_code,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Unable to cancel payment.',
+            ], 500);
+        }
     }
 }

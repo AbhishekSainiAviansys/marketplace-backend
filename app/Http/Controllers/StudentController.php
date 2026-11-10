@@ -71,12 +71,26 @@ class StudentController extends Controller
 
     public function couponValidate(Request $r, CouponService $coupons)
     {
-        $u = $r->user();
         $d = $r->validate([
             'code' => 'required|string|max:64',
             'subtotal' => 'nullable|numeric|min:0',
+            'user_id' => 'nullable|exists:users,id',
         ]);
         $subtotal = (float) ($d['subtotal'] ?? 0);
+
+        // Try to get authenticated user, fall back to user_id from payload
+        $u = $r->user();
+        if (! $u || ($u instanceof \App\Models\User && $u->isGuest)) {
+            $uId = $d['user_id'] ?? null;
+            if ($uId) {
+                $u = \App\Models\User::find($uId);
+            }
+        }
+
+        if (! $u) {
+            return response()->json(['message' => 'User not authenticated.'], 422);
+        }
+
         $res = $coupons->validateCode($d['code'], $u, $subtotal);
         /** @var Coupon $c */
         $c = $res['coupon'];

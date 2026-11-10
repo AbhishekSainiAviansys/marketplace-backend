@@ -38,7 +38,7 @@ const TYPE_TABS = [
   { value: 'private_tutor', label: 'Private tutor' },
 ]
 
-/** Card accent per institute type â€” top border + pill + icon tint. */
+/** Card accent per institute type top border + pill + icon tint. */
 const TYPE_STYLE: Record<string, { top: string; pill: string; icon: string; Icon: typeof School }> = {
   school: {
     top: 'border-t-blue-500',
@@ -108,7 +108,7 @@ export function Directory() {
   }
 
   /** Keep the URL shareable when the location dropdowns change.
-   *  Changing country resets state+district; changing state resets district â€”
+   *  Changing country resets state+district; changing state resets district 
    *  otherwise a stale district_id (e.g. Meerut 678 with Maharashtra 14686)
    *  filters everything to zero and the page wrongly shows "no institutes". */
   const changeLocation = (next: LocationValue) => {
@@ -228,7 +228,7 @@ export function Directory() {
   const statusLine = loading
     ? 'Searching...'
     : isDefault
-      ? `Showing ${rows.length} random picks (${breakdown}) â€” of ${total} total`
+      ? `Showing ${rows.length} random picks (${breakdown})  of ${total} total`
       : `${total} listing${total === 1 ? '' : 's'} (${breakdown})`
 
   const clearFilters = () => {

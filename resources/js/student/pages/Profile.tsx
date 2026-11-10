@@ -168,8 +168,8 @@ export function Profile() {
 
   const avatarSrc = user?.avatar ? assetUrl(user.avatar) : null
   const name = user?.name ?? 'Customer'
-  const email = user?.email ?? 'â€”'
-  const memberSince = user?.created_at ? new Date(user.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'â€”'
+  const email = user?.email ?? '-'
+  const memberSince = user?.created_at ? new Date(user.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'
 
   return (
     <div className="space-y-4">
@@ -281,9 +281,9 @@ export function Profile() {
         <h3 className="text-sm font-bold text-slate-900">Contact</h3>
         <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
           <div className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-slate-500" /><div className="font-medium text-slate-700">Mobile</div></div>
-          <dd className="col-span-2 sm:col-span-1 truncate text-slate-800">{whatsapp ?? 'â€”'}</dd>
+          <dd className="col-span-2 sm:col-span-1 truncate text-slate-800">{whatsapp ?? '-'}</dd>
           <div className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0 text-slate-500" /><div className="font-medium text-slate-700">Alternate mobile</div></div>
-          <dd className="col-span-2 sm:col-span-1 truncate text-slate-800">{altPhone ?? 'â€”'}</dd>
+          <dd className="col-span-2 sm:col-span-1 truncate text-slate-800">{altPhone ?? '-'}</dd>
           <div className="flex items-center gap-2"><Mail className="h-4 w-4 shrink-0 text-slate-500" /><div className="font-medium text-slate-700">Email</div></div>
           <dd className="col-span-2 sm:col-span-1 truncate text-slate-800">{email}</dd>
           <div className="flex items-center gap-2"><User2 className="h-4 w-4 shrink-0 text-slate-500" /><div className="font-medium text-slate-700">Role</div></div>
@@ -352,8 +352,8 @@ export function Profile() {
                   return (
                     <tr key={o.id}>
                       <td className="px-3 py-2 font-medium text-slate-900"><Link to={`/orders/${encodeURIComponent(String(o.id))}`} className="accent-text hover:underline">{o.order_code ?? o.id}</Link></td>
-                      <td className="px-3 py-2 text-slate-600">{o.placed_at ? new Date(o.placed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'â€”'}</td>
-                       <td className="px-3 py-2 text-slate-600">{items.length === 0 ? '—' : items.map((it) => { const name = it.name ?? it.product_name ?? 'Item'; const qty = it.qty ?? it.quantity ?? 1; const tracking = it.tracking_number ?? it.trackingNumber ?? it.tracking_url ?? it.trackingUrl ?? it.courier; return tracking ? `${name} x ${qty} (Tracking: ${tracking})` : `${name} x ${qty}` }).join(', ')}</td>
+                      <td className="px-3 py-2 text-slate-600">{o.placed_at ? new Date(o.placed_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '-'}</td>
+                       <td className="px-3 py-2 text-slate-600">{items.length === 0 ? '-' : items.map((it) => { const name = it.name ?? it.product_name ?? 'Item'; const qty = it.qty ?? it.quantity ?? 1; const tracking = it.tracking_number ?? it.trackingNumber ?? it.tracking_url ?? it.trackingUrl ?? it.courier; return tracking ? `${name} x ${qty} (Tracking: ${tracking})` : `${name} x ${qty}` }).join(', ')}</td>
                       <td className="px-3 py-2 text-slate-600">{o.status}</td>
                       <td className="px-3 py-2 text-right font-medium text-slate-900">{rupee(Number(o.total ?? 0))}</td>
                     </tr>

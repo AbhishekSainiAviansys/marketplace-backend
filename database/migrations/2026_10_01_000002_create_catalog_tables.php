@@ -21,8 +21,8 @@ return new class extends Migration
             $t->decimal('price', 10, 2);
             $t->decimal('mrp', 10, 2)->nullable();
             $t->integer('stock')->default(0);
-            $t->boolean('is_variant')->default(false)->after('stock');
-            $t->enum('delivery_mode', ['self', 'thirdparty', 'school_pickup'])->default('self');
+            $t->boolean('is_variant')->default(false);
+            $t->enum('delivery_mode', ['self', 'thirdparty', 'school_pickup'])->default('self')->after('is_variant');
             $t->json('payment_split')->nullable();
             $t->boolean('is_active')->default(true);
             $t->timestamps();
