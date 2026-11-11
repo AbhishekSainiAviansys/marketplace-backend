@@ -64,7 +64,6 @@ export function RandomRow() {
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
   const [items, setItems] = useState<Product[]>([])
-  const [nonce, setNonce] = useState(0)
 
   const load = useCallback(() => {
     fetchRandom(cfg.random_count)
@@ -75,7 +74,7 @@ export function RandomRow() {
       .catch(() => setItems([]))
   }, [cfg.random_count])
 
-  useEffect(() => { load() }, [load, nonce])
+  useEffect(() => { load() }, [load])
 
   if (!cfg.sections.random) return null
   return (
@@ -84,7 +83,7 @@ export function RandomRow() {
       title={cfg.headings.randomTitle}
       items={items}
       action={
-        <button onClick={() => setNonce((n) => n + 1)}
+        <button onClick={() => setItems(items => [...items].sort(() => Math.random() - 0.5))}
           className="btn btn-secondary !py-2 text-xs">
           <Shuffle className="h-3.5 w-3.5" /> Shuffle
         </button>

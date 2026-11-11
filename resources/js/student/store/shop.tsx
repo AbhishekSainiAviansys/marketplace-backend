@@ -129,10 +129,22 @@ export async function fetchBoosted(ids: (string | number)[]): Promise<Product[]>
 }
 
 export async function fetchRandom(n: number): Promise<Product[]> {
+  // Return cached results if available and count matches
+  if (cachedRandomProducts !== null && cachedRandomCount === n) {
+    return cachedRandomProducts
+  }
   const r = await api.get('/products', { params: { random: 1, per_page: Math.max(1, n) } })
   const rows = rowsOf<Record<string, unknown>>(r.data)
-  return rows.map(toProduct)
+  const products = rows.map(toProduct)
+  // Cache the result
+  cachedRandomProducts = products
+  cachedRandomCount = n
+  return products
 }
+
+// Cache for random products to avoid repeated API calls
+let cachedRandomProducts: Product[] | null = null
+let cachedRandomCount: number | null = null
 
 const productRequests = new Map<string, Promise<Product>>()
 
