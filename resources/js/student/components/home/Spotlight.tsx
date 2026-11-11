@@ -60,29 +60,20 @@ export function BoostRow() {
  *  client-side shuffle of the loaded catalogue so the row never dies. */
 export function RandomRow() {
   const cfg = useHomeConfig()
-  const { products, mergeRows } = useShop()
+  const { mergeRows } = useShop()
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
   const [items, setItems] = useState<Product[]>([])
   const [nonce, setNonce] = useState(0)
 
   const load = useCallback(() => {
-    const fallback = () => {
-      // Fisher–Yates on a copy — the Shuffle button stays useful offline.
-      const pool = [...products]
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1))
-        ;[pool[i], pool[j]] = [pool[j], pool[i]]
-      }
-      setItems(pool.slice(0, cfg.random_count))
-    }
     fetchRandom(cfg.random_count)
       .then((rows) => {
         if (rows.length > 0) { setItems(rows); mergeRef.current(rows) }
-        else fallback()
+        else setItems([])
       })
-      .catch(fallback)
-  }, [cfg.random_count, products])
+      .catch(() => setItems([]))
+  }, [cfg.random_count])
 
   useEffect(() => { load() }, [load, nonce])
 

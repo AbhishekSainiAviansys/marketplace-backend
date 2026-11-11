@@ -25,7 +25,7 @@ export function MovingRows() {
   const cfg = useHomeConfig()
   if (!cfg.sections.marquee) return null
 
-  const { products, mergeRows } = useShop()
+  const { mergeRows } = useShop()
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
 
@@ -33,28 +33,21 @@ export function MovingRows() {
   const [, setError] = useState<Error | null>(null)
 
   const load = useCallback(() => {
-    // Empty success == no live products yet — treat like the offline path so
-    // the rows still render from whatever catalogue is loaded.
     fetchRandom(16)
       .then((rows) => {
         if (rows.length > 0) {
           mergeRef.current(rows)
           setItems(rows)
           setError(null)
-        } else if (products.length > 0) {
-          setItems(products.slice(0, 16))
         } else {
           setItems([])
         }
       })
       .catch((cause) => {
-        // Offline / API down — fall back to whatever catalogue is loaded so the
-        // row never renders empty while products exist.
         setError(cause as Error)
-        if (products.length > 0) setItems(products.slice(0, 16))
-        else setItems([])
+        setItems([])
       })
-  }, [products])
+  }, [])
 
   useEffect(() => { load() }, [load])
 

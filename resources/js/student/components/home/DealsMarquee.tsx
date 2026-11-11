@@ -27,7 +27,7 @@ const MAX_COPIES = 16
 
 export function DealsMarquee() {
   const cfg = useHomeConfig()
-  const { products, mergeRows } = useShop()
+  const { mergeRows } = useShop()
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
   const [items, setItems] = useState<Product[]>([])
@@ -39,13 +39,11 @@ export function DealsMarquee() {
   const holdTimer = useRef<number | undefined>(undefined)
 
   const load = useCallback(() => {
-    // An empty success (catalogue has no active products yet) must fall back
-    // too — otherwise a fresh install would render no strip at all.
     const useCatalogue = (rows: Product[]) => {
       if (rows.length > 0) { mergeRef.current(rows); setItems(rows) }
-      else setItems(products.slice(0, 12))
+      else setItems([])
     }
-    const pickRandom = () => fetchRandom(12).then(useCatalogue).catch(() => setItems(products.slice(0, 12)))
+    const pickRandom = () => fetchRandom(12).then(useCatalogue).catch(() => setItems([]))
     // Promoted/boosted first — the admin's hand-picked row gets a second life here.
     if (cfg.boostIds.length > 0) {
       fetchBoosted(cfg.boostIds)
@@ -54,7 +52,7 @@ export function DealsMarquee() {
     } else {
       pickRandom()
     }
-  }, [cfg.boostIds, products])
+  }, [cfg.boostIds])
 
   useEffect(() => { load() }, [load])
 

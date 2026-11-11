@@ -51,7 +51,7 @@ export function Shop() {
         <CatalogueRail cat={cat} setCat={setCat} sub={sub} setSub={setSub} sort={sort} setSort={setSort} q={q} setQ={setQ} />
         <section className="min-w-0 space-y-4">
           {!live && !loading && (
-            <Alert kind="info">Showing demo products — add products from the Admin or Vendor panel and they appear here live.</Alert>
+            <Alert kind="info">Hang tight — no products yet. Check back soon.</Alert>
           )}
           {loading ? <SkeletonGrid /> : rows.length === 0 ? (
             <div className="card"><EmptyState title="No products found" hint="Try a different search or category." /></div>
