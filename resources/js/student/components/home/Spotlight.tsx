@@ -1,4 +1,11 @@
-/** Boosted "Featured picks" + "Surprise picks" rows (admin-managed). */
+/** Boosted "Featured picks" + "Surprise picks" rows (admin-managed).
+ *
+ *  v2 — adds loadedRef guards so each row fetches exactly once per mount,
+ *  even when the parent re-renders (which it does whenever useShop or
+ *  useHomeConfig update). Without this guard, the server's slower response
+ *  times (50-200ms vs ~5ms on localhost) cause a render cascade that
+ *  triggers 11,000+ duplicate API calls and crashes the browser.
+ */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Shuffle } from 'lucide-react'
 import { fetchBoosted, fetchRandom, useShop, type Product } from '../../store/shop'
@@ -37,16 +44,19 @@ export function BoostRow() {
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
   const [items, setItems] = useState<Product[]>([])
+  const loadedRef = useRef(false)
 
   const load = useCallback(() => {
+    if (loadedRef.current) return
     if (cfg.boostIds.length === 0) { setItems([]); return }
+    loadedRef.current = true
     fetchBoosted(cfg.boostIds)
       .then((rows) => {
         const byId = new Map(rows.map((r) => [r.id, r]))
         setItems(cfg.boostIds.map((id) => byId.get(String(id))).filter((p): p is Product => !!p))
         mergeRef.current(rows)
       })
-      .catch(() => setItems([]))
+      .catch(() => { loadedRef.current = false; setItems([]) })
   }, [cfg.boostIds])
 
   useEffect(() => { load() }, [load])
@@ -64,14 +74,17 @@ export function RandomRow() {
   const mergeRef = useRef(mergeRows)
   mergeRef.current = mergeRows
   const [items, setItems] = useState<Product[]>([])
+  const loadedRef = useRef(false)
 
   const load = useCallback(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
     fetchRandom(cfg.random_count)
       .then((rows) => {
         if (rows.length > 0) { setItems(rows); mergeRef.current(rows) }
         else setItems([])
       })
-      .catch(() => setItems([]))
+      .catch(() => { loadedRef.current = false; setItems([]) })
   }, [cfg.random_count])
 
   useEffect(() => { load() }, [load])
