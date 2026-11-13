@@ -4,6 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Models\Credential;
 use App\Models\Order;
+use App\Models\Product;
+use App\Models\Vendor;
+use App\Models\School;
 use App\Services\OrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -54,7 +57,8 @@ class PaymentController extends Controller
 
             if (!file_exists($caBundle) || !is_readable($caBundle)) {
                 throw new \RuntimeException(
-                    'Razorpay CA certificate not found or not readable: ' . $caBundle
+                    'Razorpay CA certificate not found or not readable: ' . $caBundle .
+                    ' — download from https://curl.se/docs/caextract.html and place at storage/app/certificates/cacert.pem'
                 );
             }
 
@@ -73,7 +77,15 @@ class PaymentController extends Controller
     }
 
     /**
-     * Create Razorpay order.
+     * Create Razorpay order with payment split (Route API).
+     *
+     * Split logic:
+     *   - For each cart item: look up the vendor OR school that owns the product
+     *   - Vendor/School receives: item_subtotal × (1 - portal_charge_percent)
+     *   - Platform (you) receives: portal_charge + delivery_charge + gst
+     *
+     * Razorpay requires each linked account to be active before transfer.
+     * Items without a linked account go 100% to the platform.
      */
     public function createOrder(Request $request)
     {
@@ -100,23 +112,15 @@ class PaymentController extends Controller
             'address' => ['required'],
             'coupon_code' => ['nullable', 'string'],
             'pay_mode' => ['nullable', 'string'],
-            'subtotal' => 'required|numeric|min:0',
-            'total_payable' => 'required|numeric|min:0',
         ]);
 
         $order = null;
 
         try {
-
-            print_R($validated);die;
-            /*
-             * Create the order and reserve stock.
-             * The OrderService should retain your existing cart,
-             * product, address, coupon and stock validation logic.
-             */
+            // Create the order and reserve stock
             $order = $this->orders->create($user, $validated);
 
-            $amount = (int) round(((float) $order->total_amount) * 100);
+            $amount = (int) round(((float) $order->total) * 100);
 
             if ($amount < 100) {
                 $this->orders->releasePaymentReservation($order);
@@ -129,20 +133,20 @@ class PaymentController extends Controller
 
             $creds = $this->razorpayCredentials();
 
+            // Build the payment split (transfers array) using Route API
+            $transfers = $this->buildTransfers($order);
+
             $payload = [
                 'amount' => $amount,
                 'currency' => 'INR',
                 'receipt' => (string) $order->order_code,
+                'transfers' => $transfers,
                 'notes' => [
                     'order_code' => (string) $order->order_code,
                     'user_id' => (string) $user->id,
                 ],
             ];
 
-            /*
-             * Make the Razorpay API request separately from response
-             * validation so stock reservation is released only once.
-             */
             try {
                 $response = $this->razorpayHttp($creds)
                     ->post('https://api.razorpay.com/v1/orders', $payload);
@@ -162,10 +166,7 @@ class PaymentController extends Controller
 
             $razorpayOrder = $response->json();
 
-            if (
-                !$response->successful() ||
-                empty($razorpayOrder['id'])
-            ) {
+            if (!$response->successful() || empty($razorpayOrder['id'])) {
                 $this->orders->releasePaymentReservation($order);
 
                 Log::error('Razorpay order creation failed', [
@@ -191,6 +192,7 @@ class PaymentController extends Controller
                 'amount' => $amount,
                 'currency' => 'INR',
                 'order_code' => $order->order_code,
+                'transfers' => $transfers,
             ]);
 
         } catch (ValidationException $e) {
@@ -210,6 +212,7 @@ class PaymentController extends Controller
 
             Log::error('Razorpay createOrder error', [
                 'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
             ]);
 
             return response()->json([
@@ -217,6 +220,105 @@ class PaymentController extends Controller
                 'message' => 'Unable to initialize payment. Please try again.',
             ], 500);
         }
+    }
+
+    /**
+     * Build the Razorpay transfers array for payment splitting (Route API).
+     *
+     * Each cart item is routed to either:
+     *   - The vendor's linked account (if vendor has razorpay_account_id + active)
+     *   - The school's linked account (if school has razorpay_account_id + active)
+     *   - Platform (fallback — items with no linked account)
+     *
+     * Platform also receives: portal charges + delivery + GST.
+     */
+    protected function buildTransfers(Order $order): array
+    {
+        $transfers = [];
+        $items = is_string($order->items) ? json_decode($order->items, true) : $order->items;
+        if (!is_array($items)) {
+            $items = [];
+        }
+
+        // Group cart items by their owner (vendor or school linked account)
+        $ownerSplits = [];   // ['acc_XXX' => amount_in_paise]
+        $platformShare = 0;  // in paise
+
+        foreach ($items as $item) {
+            $product = Product::where('product_code', $item['product_code'])->first();
+            if (!$product) {
+                continue;
+            }
+
+            $itemSubtotal = (int) round(((float) $product->price) * 100 * ($item['qty'] ?? 1));
+
+            // Look up the linked account (vendor or school)
+            $linkedAccountId = null;
+            if (!empty($product->vendor_id)) {
+                $vendor = Vendor::find($product->vendor_id);
+                if (!empty($vendor->razorpay_active) && !empty($vendor->razorpay_account_id)) {
+                    $linkedAccountId = $vendor->razorpay_account_id;
+                }
+            } elseif (!empty($product->school_id)) {
+                $school = School::find($product->school_id);
+                if (!empty($school->razorpay_active) && !empty($school->razorpay_account_id)) {
+                    $linkedAccountId = $school->razorpay_account_id;
+                }
+            }
+
+            // Compute the vendor/school share (item subtotal minus portal charge)
+            $portalPercent = (float) ($product->portal_charge ?? 0) / 100;
+            $portalAmount = (int) round($itemSubtotal * $portalPercent);
+            $ownerAmount = $itemSubtotal - $portalAmount;
+
+            if ($linkedAccountId) {
+                $ownerSplits[$linkedAccountId] = ($ownerSplits[$linkedAccountId] ?? 0) + $ownerAmount;
+            } else {
+                // No linked account — full item amount goes to platform
+                $platformShare += $itemSubtotal;
+            }
+
+            // Portal charge always goes to platform
+            $platformShare += $portalAmount;
+        }
+
+        // Add delivery charge + GST to platform share
+        $platformShare += (int) round(((float) $order->delivery_charge) * 100);
+        $platformShare += (int) round(((float) $order->gst_amount) * 100);
+
+        // Build the transfers array — vendor/school splits first
+        foreach ($ownerSplits as $accountId => $amount) {
+            if ($amount > 0) {
+                $transfers[] = [
+                    'account' => $accountId,
+                    'amount' => $amount,
+                    'currency' => 'INR',
+                    'notes' => [
+                        'order_code' => (string) $order->order_code,
+                        'reason' => 'vendor/school share',
+                    ],
+                    'linked_account_notes' => ['order_code'],
+                ];
+            }
+        }
+
+        // Platform transfer — if a platform_account_id is configured.
+        // If empty, Razorpay holds the remainder in the parent account automatically.
+        $platformAccountId = config('services.razorpay.platform_account_id');
+        if ($platformShare > 0 && !empty($platformAccountId)) {
+            $transfers[] = [
+                'account' => $platformAccountId,
+                'amount' => $platformShare,
+                'currency' => 'INR',
+                'notes' => [
+                    'order_code' => (string) $order->order_code,
+                    'reason' => 'platform share',
+                ],
+                'linked_account_notes' => ['order_code'],
+            ];
+        }
+
+        return $transfers;
     }
 
     /**
@@ -267,7 +369,7 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Fetch payment details directly from Razorpay.
+            // Fetch payment details directly from Razorpay
             $response = $this->razorpayHttp($creds)
                 ->get(
                     'https://api.razorpay.com/v1/payments/' .
@@ -289,7 +391,7 @@ class PaymentController extends Controller
 
             $payment = $response->json();
 
-            // Confirm payment is captured.
+            // Confirm payment is captured
             if (($payment['status'] ?? null) !== 'captured') {
                 return response()->json([
                     'status' => false,
@@ -297,7 +399,7 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Verify payment belongs to the expected Razorpay order.
+            // Verify payment belongs to the expected Razorpay order
             if (
                 ($payment['order_id'] ?? null) !==
                 $validated['razorpay_order_id']
@@ -308,10 +410,10 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Verify amount.
+            // Verify amount
             $expectedAmount = (int) round(
-                ((float) $order->total_amount) * 100
-            );
+                    ((float) $order->total) * 100
+                );
 
             if ((int) ($payment['amount'] ?? 0) !== $expectedAmount) {
                 return response()->json([
@@ -320,7 +422,7 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Verify currency.
+            // Verify currency
             if (($payment['currency'] ?? null) !== 'INR') {
                 return response()->json([
                     'status' => false,
@@ -328,8 +430,8 @@ class PaymentController extends Controller
                 ], 422);
             }
 
-            // Confirm payment and finalize order.
-            $this->orders->confirmPayment($order, $payment);
+            // Confirm payment and finalize order
+            $this->orders->confirmPayment($order, $validated['razorpay_payment_id']);
 
             return response()->json([
                 'status' => true,

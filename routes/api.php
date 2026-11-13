@@ -39,7 +39,7 @@ Route::prefix('v1')->group(function () {
     Route::get('locations/phonecodes', [LocationController::class, 'phonecodes']);
     Route::get('locations/schools', [LocationController::class, 'schools']);
     Route::get('settings/public', [SettingController::class, 'public']);
-    Route::post('payments/webhook', [PaymentWebhookController::class, 'razorpay']);
+    Route::post('payment/webhook', [PaymentWebhookController::class, 'razorpay']);
 
     // Public storefront catalogue. The student shop paginates this while the
     // user scrolls and must work logged-out (anonymous visitors previously got

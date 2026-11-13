@@ -34,9 +34,15 @@ return [
             'channel' => env('SLACK_BOT_USER_DEFAULT_CHANNEL'),
         ],
     ],
+    // 'razorpay' => [
+    //     'ssl_verify' => env('RAZORPAY_SSL_VERIFY', true),
+    //     'ca_bundle' => env('RAZORPAY_CA_BUNDLE', null),
+    // ],
     'razorpay' => [
-        'ssl_verify' => env('RAZORPAY_SSL_VERIFY', true),
-        'ca_bundle' => env('RAZORPAY_CA_BUNDLE', null),
+        'platform_account_id' => env('RZP_PLATFORM_ACCOUNT'),
+        'key_id' => env('RZP_KEY_ID'),
+        'key_secret' => env('RZP_KEY_SECRET'),
+        'webhook_secret' => env('RZP_WEBHOOK_SECRET'),
     ],
 
 ];
